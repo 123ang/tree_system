@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tree Diagram Embed</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .embed-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .embed-header {
+            background: #007bff;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .embed-title {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .embed-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .search-box {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 200px;
+        }
+        
+        .search-btn {
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .search-btn:hover {
+            background: #218838;
+        }
+        
+        .tree-container {
+            width: 100%;
+            height: 600px;
+            position: relative;
+        }
+        
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            background: #fafafa;
+            color: #666;
+            font-size: 16px;
+        }
+        
+        .error {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            background: #fafafa;
+            color: #dc3545;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            max-width: 200px;
+            z-index: 1000;
+        }
+        
+        @media (max-width: 768px) {
+            .embed-header {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .search-box {
+                width: 100%;
+            }
+            
+            .tree-container {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="embed-container">
+        <div class="embed-header">
+            <div class="embed-title">Direct Sales Tree Diagram</div>
+            <div class="embed-controls">
+                <input type="text" id="searchInput" class="search-box" placeholder="Search by wallet address...">
+                <button id="searchBtn" class="search-btn">Search</button>
+            </div>
+        </div>
+        
+        <div id="tree-container" class="tree-container">
+            <div class="loading">Loading tree diagram...</div>
+        </div>
+    </div>
+
+    <!-- Include the widget script -->
+    <script src="/widget.js"></script>
+    
+    <script>
+        // Get URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const memberId = urlParams.get('memberId');
+        const wallet = urlParams.get('wallet');
+        const maxDepth = urlParams.get('maxDepth') || 3;
+        
+        let currentWidget = null;
+        
+        // Initialize widget
+        function initWidget(config) {
+            if (currentWidget) {
+                currentWidget.destroy();
+            }
+            
+            currentWidget = TreeWidget.init({
+                container: 'tree-container',
+                apiUrl: window.location.origin + '/api', // Use same origin for API
+                ...config,
+                onNodeClick: (nodeId, nodeData) => {
+                    console.log('Node clicked:', nodeId, nodeData);
+                    // You can add custom click handling here
+                },
+                onError: (error) => {
+                    console.error('Tree widget error:', error);
+                    document.getElementById('tree-container').innerHTML = `
+                        <div class="error">
+                            <div>
+                                <div style="font-size: 16px; margin-bottom: 10px;">⚠️ Error</div>
+                                <div style="font-size: 14px;">${error.message}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+        }
+        
+        // Search functionality
+        function searchByWallet(walletAddress) {
+            if (!walletAddress.trim()) return;
+            
+            // Show loading
+            document.getElementById('tree-container').innerHTML = '<div class="loading">Searching...</div>';
+            
+            // Search for member by wallet
+            fetch(`/api/members/wallet/${walletAddress}`)
+                .then(response => response.json())
+                .then(member => {
+                    if (member && member.id) {
+                        initWidget({
+                            memberId: member.id,
+                            maxDepth: parseInt(maxDepth)
+                        });
+                    } else {
+                        throw new Error('Member not found');
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('tree-container').innerHTML = `
+                        <div class="error">
+                            <div>
+                                <div style="font-size: 16px; margin-bottom: 10px;">⚠️ Not Found</div>
+                                <div style="font-size: 14px;">No member found with wallet: ${walletAddress}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+        }
+        
+        // Event listeners
+        document.getElementById('searchBtn').addEventListener('click', () => {
+            const walletAddress = document.getElementById('searchInput').value.trim();
+            searchByWallet(walletAddress);
+        });
+        
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const walletAddress = document.getElementById('searchInput').value.trim();
+                searchByWallet(walletAddress);
+            }
+        });
+        
+        // Initialize with URL parameters
+        if (memberId) {
+            initWidget({
+                memberId: parseInt(memberId),
+                maxDepth: parseInt(maxDepth)
+            });
+        } else if (wallet) {
+            searchByWallet(wallet);
+        } else {
+            // Default to first member or show search
+            document.getElementById('tree-container').innerHTML = `
+                <div class="error">
+                    <div>
+                        <div style="font-size: 16px; margin-bottom: 10px;">🔍 Search Required</div>
+                        <div style="font-size: 14px;">Please enter a wallet address to view the tree diagram</div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Add info panel
+        const infoPanel = document.createElement('div');
+        infoPanel.className = 'info-panel';
+        infoPanel.innerHTML = `
+            <div><strong>Instructions:</strong></div>
+            <div>• Enter wallet address to search</div>
+            <div>• Click nodes for details</div>
+            <div>• Use controls to navigate</div>
+        `;
+        document.getElementById('tree-container').appendChild(infoPanel);
+    </script>
+</body>
+</html>
