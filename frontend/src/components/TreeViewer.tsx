@@ -183,6 +183,75 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
     }
   };
 
+  const handleExportPDF = async () => {
+    if (!cyRef.current) return;
+    
+    try {
+      // First, fit the diagram with padding
+      cyRef.current.fit(undefined, 50);
+      
+      // Wait for layout to settle
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Export as PNG first (base64)
+      const png64 = cyRef.current.png({
+        output: 'base64',
+        full: true,
+        bg: 'white',
+        scale: 2
+      });
+      
+      // Load jsPDF dynamically
+      const jsPDF = (await import('jspdf')).default;
+      
+      // Create PDF document
+      const pdf = new jsPDF({
+        orientation: 'landscape', // Use landscape for tree diagrams
+        unit: 'px',
+        format: [1920, 1080] // Default size, will adjust to image
+      });
+      
+      // Convert base64 PNG to image
+      const img = new Image();
+      img.src = 'data:image/png;base64,' + png64;
+      
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => {
+          try {
+            // Calculate dimensions to fit PDF page
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const imgWidth = img.width;
+            const imgHeight = img.height;
+            
+            // Calculate scaling to fit page
+            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+            const scaledWidth = imgWidth * ratio;
+            const scaledHeight = imgHeight * ratio;
+            
+            // Center the image on the page
+            const xOffset = (pdfWidth - scaledWidth) / 2;
+            const yOffset = (pdfHeight - scaledHeight) / 2;
+            
+            // Add image to PDF
+            pdf.addImage(png64, 'PNG', xOffset, yOffset, scaledWidth, scaledHeight);
+            
+            // Save PDF
+            pdf.save(`tree-diagram-${new Date().toISOString().slice(0, 10)}.pdf`);
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        };
+        img.onerror = reject;
+      });
+    } catch (error) {
+      console.error('PDF export error:', error);
+      // Fallback: try using browser's print to PDF
+      alert('PDF export failed. Try using browser Print (Ctrl+P) and Save as PDF option.');
+    }
+  };
+
   if (!tree) {
     return (
       <div className="tree-container">
@@ -209,7 +278,15 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
           style={{ background: '#28a745' }}
           title="Export diagram as PNG"
         >
-          📷 Export
+          📷 PNG
+        </button>
+        <button 
+          className="btn btn-secondary" 
+          onClick={handleExportPDF}
+          style={{ background: '#dc3545' }}
+          title="Export diagram as PDF"
+        >
+          📄 PDF
         </button>
       </div>
       <div ref={containerRef} id="cy" style={{ width: '100%', height: '100%' }} />

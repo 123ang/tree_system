@@ -433,7 +433,89 @@ const TreeViewerDebug: React.FC<TreeViewerDebugProps> = ({ tree, onNodeClick, ma
             fontSize: '12px'
           }}
         >
-          📷 Export PNG
+          📷 PNG
+        </button>
+        <button
+          onClick={async () => {
+            if (cyRef.current) {
+              try {
+                // First, fit the diagram with padding
+                cyRef.current.fit(undefined, 50);
+                
+                // Wait for layout to settle
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Export as PNG first (base64)
+                const png64 = cyRef.current.png({
+                  output: 'base64',
+                  full: true,
+                  bg: 'white',
+                  scale: 2
+                });
+                
+                // Load jsPDF dynamically
+                const jsPDF = (await import('jspdf')).default;
+                
+                // Create PDF document
+                const pdf = new jsPDF({
+                  orientation: 'landscape',
+                  unit: 'px',
+                  format: [1920, 1080]
+                });
+                
+                // Convert base64 PNG to image
+                const img = new Image();
+                img.src = 'data:image/png;base64,' + png64;
+                
+                await new Promise<void>((resolve, reject) => {
+                  img.onload = () => {
+                    try {
+                      // Calculate dimensions to fit PDF page
+                      const pdfWidth = pdf.internal.pageSize.getWidth();
+                      const pdfHeight = pdf.internal.pageSize.getHeight();
+                      const imgWidth = img.width;
+                      const imgHeight = img.height;
+                      
+                      // Calculate scaling to fit page
+                      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+                      const scaledWidth = imgWidth * ratio;
+                      const scaledHeight = imgHeight * ratio;
+                      
+                      // Center the image on the page
+                      const xOffset = (pdfWidth - scaledWidth) / 2;
+                      const yOffset = (pdfHeight - scaledHeight) / 2;
+                      
+                      // Add image to PDF
+                      pdf.addImage(png64, 'PNG', xOffset, yOffset, scaledWidth, scaledHeight);
+                      
+                      // Save PDF
+                      pdf.save(`tree-diagram-${new Date().toISOString().slice(0, 10)}.pdf`);
+                      setDebugInfo(prev => prev + `\n✓ Exported tree diagram as PDF`);
+                      resolve();
+                    } catch (error) {
+                      reject(error);
+                    }
+                  };
+                  img.onerror = reject;
+                });
+              } catch (error) {
+                console.error('PDF export error:', error);
+                setDebugInfo(prev => prev + `\n✗ PDF export failed: ${error}`);
+                alert('PDF export failed. Try using browser Print (Ctrl+P) and Save as PDF option.');
+              }
+            }
+          }}
+          style={{
+            padding: '5px 10px',
+            background: '#dc3545',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px'
+          }}
+        >
+          📄 PDF
         </button>
         <button
           onClick={() => {
