@@ -57,33 +57,79 @@ export class TreeService {
     const actualMaxDepth = maxDepth >= 999 ? 100 : maxDepth; // Cap at 100 for performance
 
     // Get tree structure using closure table - simplified approach
-    const query = `
-      SELECT 
-        m.id,
-        m.wallet_address,
-        m.sponsor_id,
-        m.activation_sequence,
-        m.total_nft_claimed,
-        p.position,
-        mc.depth
-      FROM members m
-      JOIN member_closure mc ON m.id = mc.descendant_id
-      LEFT JOIN placements p ON m.id = p.child_id
-      WHERE mc.ancestor_id = ? 
-        AND mc.depth <= ?
-      ORDER BY mc.depth, p.position, m.activation_sequence
-      LIMIT 10000
+    // First, check if closure table has entries for this member
+    const closureCheckQuery = `
+      SELECT COUNT(*) as count FROM member_closure WHERE ancestor_id = ?
     `;
+    const closureCheck = await executeQuery(closureCheckQuery, [memberId]);
+    const hasClosureEntries = (closureCheck as any)[0]?.count > 0;
+
+    console.log(`Closure entries for member ${memberId}: ${hasClosureEntries}`);
+
+    let query: string;
+    let queryParams: any[];
+
+    if (hasClosureEntries) {
+      // Use closure table if available
+      query = `
+        SELECT 
+          m.id,
+          m.wallet_address,
+          m.sponsor_id,
+          m.activation_sequence,
+          m.total_nft_claimed,
+          p.position,
+          mc.depth
+        FROM members m
+        JOIN member_closure mc ON m.id = mc.descendant_id
+        LEFT JOIN placements p ON m.id = p.child_id
+        WHERE mc.ancestor_id = ? 
+          AND mc.depth <= ?
+        ORDER BY mc.depth, p.position, m.activation_sequence
+        LIMIT 10000
+      `;
+      queryParams = [memberId, actualMaxDepth];
+    } else {
+      // Fallback: Get root member and its direct children using placements
+      query = `
+        SELECT 
+          m.id,
+          m.wallet_address,
+          m.sponsor_id,
+          m.activation_sequence,
+          m.total_nft_claimed,
+          p.position,
+          CASE 
+            WHEN m.id = ? THEN 0
+            ELSE 1
+          END as depth
+        FROM members m
+        LEFT JOIN placements p ON m.id = p.child_id
+        WHERE m.id = ? OR p.parent_id = ?
+        ORDER BY depth, p.position, m.activation_sequence
+        LIMIT 10000
+      `;
+      queryParams = [memberId, memberId, memberId];
+    }
 
     console.log(`Executing query with memberId: ${memberId}, maxDepth: ${actualMaxDepth}`);
-    const results = await executeQuery(query, [memberId, actualMaxDepth]);
+    const results = await executeQuery(query, queryParams);
     const nodes = results as any[];
 
     console.log(`Query returned ${nodes.length} nodes`);
 
     if (nodes.length === 0) {
       console.log('No nodes found in tree structure');
-      return null;
+      // Return at least the root member even if no children
+      return {
+        id: member.id,
+        wallet_address: member.wallet_address,
+        children: [],
+        depth: 0,
+        sponsor_id: member.sponsor_id || undefined,
+        activation_sequence: member.activation_sequence || undefined,
+        total_nft_claimed: member.total_nft_claimed || undefined
+      };
     }
 
     // Build tree structure

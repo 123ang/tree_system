@@ -89,8 +89,8 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
       }
     });
 
-    // Fit to viewport
-    cy.fit();
+    // Fit to viewport with padding
+    cy.fit(undefined, 50); // 50px padding on all sides
 
     return () => {
       cy.destroy();
@@ -150,7 +150,36 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
 
   const handleFit = () => {
     if (cyRef.current) {
-      cyRef.current.fit();
+      cyRef.current.fit(undefined, 50); // Fit with 50px padding
+    }
+  };
+
+  const handleExport = async () => {
+    if (!cyRef.current) return;
+    
+    try {
+      // First, fit the diagram with padding
+      cyRef.current.fit(undefined, 50);
+      
+      // Wait for layout to settle
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Export as PNG using Cytoscape's built-in export
+      const png64 = cyRef.current.png({
+        output: 'base64',
+        full: true, // Include all nodes even if outside viewport
+        bg: 'white',
+        scale: 2 // Higher resolution for screenshot
+      });
+      
+      // Create download link
+      const link = document.createElement('a');
+      link.download = `tree-diagram-${new Date().toISOString().slice(0, 10)}.png`;
+      link.href = 'data:image/png;base64,' + png64;
+      link.click();
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to export diagram. Please try again.');
     }
   };
 
@@ -164,15 +193,23 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
 
   return (
     <div className="tree-container">
-      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 1000 }}>
-        <button className="btn btn-secondary" onClick={handleZoomIn} style={{ marginRight: 5 }}>
+      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 1000, display: 'flex', gap: '5px' }}>
+        <button className="btn btn-secondary" onClick={handleZoomIn} style={{ marginRight: 0 }}>
           +
         </button>
-        <button className="btn btn-secondary" onClick={handleZoomOut} style={{ marginRight: 5 }}>
+        <button className="btn btn-secondary" onClick={handleZoomOut} style={{ marginRight: 0 }}>
           -
         </button>
         <button className="btn btn-secondary" onClick={handleFit}>
           Fit
+        </button>
+        <button 
+          className="btn btn-secondary" 
+          onClick={handleExport}
+          style={{ background: '#28a745' }}
+          title="Export diagram as PNG"
+        >
+          📷 Export
         </button>
       </div>
       <div ref={containerRef} id="cy" style={{ width: '100%', height: '100%' }} />

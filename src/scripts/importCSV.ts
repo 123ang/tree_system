@@ -9,7 +9,7 @@ interface MemberData {
   current_level: number;
   activation_sequence: number;
   activation_time: string;
-  total_nft_claimed: number;
+  total_nft_claimed: number | null;
 }
 
 interface PlacementCandidate {
@@ -44,18 +44,63 @@ class TreeImporter {
     console.log('CSV import completed successfully!');
   }
 
+  private removeBOM(str: string): string {
+    // Remove BOM (Byte Order Mark) character if present
+    return str.replace(/^\uFEFF/, '');
+  }
+
+  private getColumnValue(row: any, ...possibleKeys: string[]): string {
+    // Try each possible key, handling BOM variations
+    for (const key of possibleKeys) {
+      // Try exact key
+      if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
+        return String(row[key]);
+      }
+      // Try with BOM
+      const bomKey = '\uFEFF' + key;
+      if (row[bomKey] !== undefined && row[bomKey] !== null && row[bomKey] !== '') {
+        return String(row[bomKey]);
+      }
+      // Try keys with BOM removed from row keys
+      for (const rowKey of Object.keys(row)) {
+        if (this.removeBOM(rowKey) === key && row[rowKey] !== undefined && row[rowKey] !== null && row[rowKey] !== '') {
+          return String(row[rowKey]);
+        }
+      }
+    }
+    return '';
+  }
+
   private async readCSV(filePath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       fs.createReadStream(filePath)
         .pipe(csv())
         .on('data', (row) => {
+          // Support both formats: original (wallet_address) and sponsor tree CSV (User Name)
+          // Handle BOM character that might be in column names
+          const wallet_address = this.getColumnValue(row, 'wallet_address', 'User Name', 'user_name').trim();
+          const referrer_wallet = this.getColumnValue(row, 'referrer_wallet', 'Referrer_User Name', 'referrer_user_name', 'Referrer User Name').trim();
+          
+          if (!wallet_address) {
+            console.warn('Skipping row with empty wallet address:', row);
+            return;
+          }
+
+          const activation_sequence = parseInt(this.getColumnValue(row, 'Activation sequence', 'activation_sequence') || '0');
+          const current_level = parseInt(this.getColumnValue(row, 'Current Level', 'current_level') || '1');
+          const activation_time = this.getColumnValue(row, 'Activation_time', 'activation_time');
+          const total_nft_claimed_str = this.getColumnValue(row, 'Total NFT claim', 'total_nft_claimed');
+          const total_nft_claimed = total_nft_claimed_str && total_nft_claimed_str.trim() !== '' 
+            ? parseInt(total_nft_claimed_str) 
+            : null;
+
           this.members.push({
-            wallet_address: row.wallet_address,
-            referrer_wallet: row.referrer_wallet,
-            current_level: parseInt(row.current_level),
-            activation_sequence: parseInt(row.activation_sequence),
-            activation_time: row.activation_time,
-            total_nft_claimed: parseInt(row.total_nft_claimed)
+            wallet_address,
+            referrer_wallet,
+            current_level,
+            activation_sequence,
+            activation_time,
+            total_nft_claimed
           });
         })
         .on('end', resolve)
@@ -67,6 +112,61 @@ class TreeImporter {
     console.log('Importing members...');
     
     for (const member of this.members) {
+      // Parse activation time - handle format like "2025/10/15 0.00" or "2025/10/15 1.03"
+      // Format: "YYYY/MM/DD H.MM" where H is hours (0-23) and MM is minutes (00-59)
+      let joinedAt: Date;
+      try {
+        let timeStr = member.activation_time.trim();
+        
+        if (timeStr.includes('/')) {
+          // Parse format: "2025/10/15 0.00" -> "2025-10-15 00:00:00"
+          const parts = timeStr.split(/\s+/);
+          if (parts.length < 2) {
+            throw new Error('Invalid date format');
+          }
+          
+          // Parse date part: "2025/10/15"
+          const datePart = parts[0].split('/');
+          if (datePart.length !== 3) {
+            throw new Error('Invalid date format');
+          }
+          const [year, month, day] = datePart.map(n => parseInt(n.trim()));
+          
+          // Parse time part: "0.00" -> hours: 0, minutes: 0
+          // "1.03" -> hours: 1, minutes: 3
+          // "1.30" -> hours: 1, minutes: 30
+          const timePart = parts[1] || '0.00';
+          const timeParts = timePart.split('.');
+          const hours = parseInt(timeParts[0] || '0') || 0;
+          const minutes = parseInt(timeParts[1] || '0') || 0;
+          
+          // Ensure valid ranges
+          const validYear = year || new Date().getFullYear();
+          const validMonth = (month >= 1 && month <= 12) ? month : 1;
+          const validDay = (day >= 1 && day <= 31) ? day : 1;
+          const validHours = (hours >= 0 && hours <= 23) ? hours : 0;
+          const validMinutes = (minutes >= 0 && minutes <= 59) ? minutes : 0;
+          
+          // Create date in ISO format: "2025-10-15T00:00:00"
+          // MySQL datetime format: "2025-10-15 00:00:00"
+          joinedAt = new Date(validYear, validMonth - 1, validDay, validHours, validMinutes, 0);
+          
+          // Validate the created date
+          if (isNaN(joinedAt.getTime())) {
+            throw new Error('Invalid date value');
+          }
+        } else {
+          // Try to parse as standard date string
+          joinedAt = new Date(timeStr);
+          if (isNaN(joinedAt.getTime())) {
+            throw new Error('Invalid date format');
+          }
+        }
+      } catch (error) {
+        console.warn(`Error parsing date for ${member.wallet_address}: "${member.activation_time}", using current date. Error: ${error}`);
+        joinedAt = new Date();
+      }
+      
       const result = await executeQuery(
         'INSERT INTO members (wallet_address, activation_sequence, current_level, total_nft_claimed, joined_at) VALUES (?, ?, ?, ?, ?)',
         [
@@ -74,20 +174,26 @@ class TreeImporter {
           member.activation_sequence,
           member.current_level,
           member.total_nft_claimed,
-          new Date(member.activation_time)
+          joinedAt
         ]
       );
       
       const memberId = (result as any).insertId;
       this.memberIdMap.set(member.wallet_address, memberId);
       
-      // Set root_id for the first member (self-referring)
-      if (member.wallet_address === member.referrer_wallet) {
+      // Set root_id and sponsor_id for root member (activation_sequence = 0 or self-referring)
+      if (member.activation_sequence === 0 || member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
         await executeQuery(
           'UPDATE members SET root_id = ? WHERE id = ?',
           [memberId, memberId]
         );
         this.sponsorIdMap.set(member.wallet_address, memberId);
+        
+        // Create self-reference in closure table for root member
+        await executeQuery(
+          'INSERT INTO member_closure (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
+          [memberId, memberId, 0]
+        );
       }
     }
     
@@ -98,14 +204,27 @@ class TreeImporter {
     console.log('Applying placement algorithm...');
     
     for (const member of this.members) {
-      if (member.wallet_address === member.referrer_wallet) {
-        // Root member - skip placement
+      // Skip root member (activation_sequence = 0 or self-referring)
+      if (member.activation_sequence === 0 || member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
         continue;
       }
       
       const sponsorId = this.sponsorIdMap.get(member.referrer_wallet);
       if (!sponsorId) {
-        console.error(`Sponsor not found for member ${member.wallet_address}`);
+        // Try to find sponsor in memberIdMap if not in sponsorIdMap yet
+        const sponsorIdFromMap = this.memberIdMap.get(member.referrer_wallet);
+        if (sponsorIdFromMap) {
+          this.sponsorIdMap.set(member.referrer_wallet, sponsorIdFromMap);
+          // Continue with the found sponsor
+          const placement = await this.findPlacement(sponsorIdFromMap, member.activation_sequence);
+          const memberId = this.memberIdMap.get(member.wallet_address);
+          if (memberId && placement) {
+            await this.placeMember(memberId, placement.parent_id, placement.position, sponsorIdFromMap);
+            this.sponsorIdMap.set(member.wallet_address, memberId);
+          }
+        } else {
+          console.error(`Sponsor not found for member ${member.wallet_address}, referrer: ${member.referrer_wallet}`);
+        }
         continue;
       }
       
@@ -290,13 +409,49 @@ class TreeImporter {
 
 // Main execution
 async function main() {
-  const csvPath = path.join(__dirname, '../../members.csv');
+  // Check if a specific file is provided as command line argument
+  const args = process.argv.slice(2);
+  let csvPath: string | null = null;
   
-  if (!fs.existsSync(csvPath)) {
-    console.error('members.csv file not found in project root');
+  if (args.length > 0) {
+    // User specified a file
+    const userPath = args[0];
+    if (fs.existsSync(userPath)) {
+      csvPath = userPath;
+    } else {
+      // Try as relative path from project root
+      const relativePath = path.join(__dirname, '../../', userPath);
+      if (fs.existsSync(relativePath)) {
+        csvPath = relativePath;
+      } else {
+        console.error(`File not found: ${userPath}`);
+        process.exit(1);
+      }
+    }
+  } else {
+    // Try multiple possible CSV file names in order
+    const possiblePaths = [
+      path.join(__dirname, '../../members.csv'),  // Prefer members.csv
+      path.join(__dirname, '../../sponsor tree.csv'),
+      path.join(__dirname, '../../sponsor_tree.csv'),
+    ];
+    
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        csvPath = p;
+        break;
+      }
+    }
+  }
+  
+  if (!csvPath) {
+    console.error('CSV file not found. Please specify a file:');
+    console.error('  npm run import-csv members.csv');
+    console.error('  npm run import-csv "sponsor tree.csv"');
     process.exit(1);
   }
   
+  console.log(`Importing from: ${csvPath}`);
   const importer = new TreeImporter();
   await importer.importCSV(csvPath);
 }

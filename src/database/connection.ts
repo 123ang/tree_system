@@ -12,8 +12,8 @@ const dbConfig = {
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  acquireTimeout: 60000,
-  timeout: 60000,
+  // Note: acquireTimeout and timeout are not valid options for mysql2 pool
+  // They are removed to prevent warnings
 };
 
 // Create connection pool

@@ -189,6 +189,27 @@ export class MemberService {
     
     return members.length > 0 ? members[0] : null;
   }
+
+  async getRootMember(): Promise<Member | null> {
+    // Get the member with activation_sequence = 0, or where root_id = id (self-referring root)
+    const query = `
+      SELECT m.*, 
+             s.wallet_address as sponsor_wallet,
+             p.position,
+             (SELECT COUNT(*) FROM placements WHERE parent_id = m.id) as children_count
+      FROM members m
+      LEFT JOIN members s ON m.sponsor_id = s.id
+      LEFT JOIN placements p ON m.id = p.child_id
+      WHERE (m.activation_sequence = 0 OR (m.root_id = m.id))
+      ORDER BY m.activation_sequence ASC, m.id ASC
+      LIMIT 1
+    `;
+    
+    const results = await executeQuery(query);
+    const members = results as Member[];
+    
+    return members.length > 0 ? members[0] : null;
+  }
   
   async getMemberLayerInfo(memberId: number): Promise<{
     layer: number;

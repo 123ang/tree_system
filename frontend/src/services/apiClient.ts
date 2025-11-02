@@ -49,6 +49,11 @@ export class ApiService {
     return response.data;
   }
 
+  async getRootMember(): Promise<Member> {
+    const response = await apiClient.get(`/members/root`);
+    return response.data;
+  }
+
   async getMemberLayerInfo(id: number): Promise<MemberLayerInfo> {
     const response = await apiClient.get(`/members/${id}/layer`);
     return response.data;

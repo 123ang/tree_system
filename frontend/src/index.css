@@ -53,6 +53,8 @@ body {
   flex: 1;
   position: relative;
   background: #fafafa;
+  padding: 50px; /* Add padding top and bottom for screenshot */
+  overflow: auto;
 }
 
 .search-input {

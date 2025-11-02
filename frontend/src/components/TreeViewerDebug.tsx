@@ -235,9 +235,9 @@ const TreeViewerDebug: React.FC<TreeViewerDebugProps> = ({ tree, onNodeClick, ma
           });
         });
 
-        // Wait a bit then fit to viewport
+        // Wait a bit then fit to viewport with padding
         setTimeout(() => {
-          cy.fit();
+          cy.fit(undefined, 50); // 50px padding on all sides
           setDebugInfo(prev => prev + `\nCytoscape initialized successfully - ${elements.length} elements`);
         }, 100);
         
@@ -356,7 +356,7 @@ const TreeViewerDebug: React.FC<TreeViewerDebugProps> = ({ tree, onNodeClick, ma
         <button
           onClick={() => {
             if (cyRef.current) {
-              cyRef.current.fit();
+              cyRef.current.fit(undefined, 50); // Fit with 50px padding
             }
           }}
           style={{
@@ -370,6 +370,70 @@ const TreeViewerDebug: React.FC<TreeViewerDebugProps> = ({ tree, onNodeClick, ma
           }}
         >
           Fit All
+        </button>
+        <button
+          onClick={async () => {
+            if (cyRef.current) {
+              try {
+                // First, fit the diagram with padding
+                cyRef.current.fit(undefined, 50);
+                
+                // Wait for layout to settle
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Export as PNG using Cytoscape's built-in export
+                const png64 = cyRef.current.png({
+                  output: 'base64',
+                  full: true, // Include all nodes even if outside viewport
+                  bg: 'white',
+                  scale: 2 // Higher resolution
+                });
+                
+                // Create download link
+                const link = document.createElement('a');
+                link.download = `tree-diagram-${new Date().toISOString().slice(0, 10)}.png`;
+                link.href = 'data:image/png;base64,' + png64;
+                link.click();
+                
+                setDebugInfo(prev => prev + `\n✓ Exported tree diagram as PNG`);
+              } catch (error) {
+                console.error('Export error:', error);
+                setDebugInfo(prev => prev + `\n✗ Export failed: ${error}`);
+                
+                // Fallback: try html2canvas if available
+                if ((window as any).html2canvas) {
+                  try {
+                    const canvas = await (window as any).html2canvas(containerRef.current, {
+                      backgroundColor: '#ffffff',
+                      scale: 2,
+                      logging: false
+                    });
+                    canvas.toBlob((blob: Blob) => {
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.download = `tree-diagram-${new Date().toISOString().slice(0, 10)}.png`;
+                      link.href = url;
+                      link.click();
+                      URL.revokeObjectURL(url);
+                    });
+                  } catch (fallbackError) {
+                    console.error('Fallback export error:', fallbackError);
+                  }
+                }
+              }
+            }
+          }}
+          style={{
+            padding: '5px 10px',
+            background: '#28a745',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px'
+          }}
+        >
+          📷 Export PNG
         </button>
         <button
           onClick={() => {

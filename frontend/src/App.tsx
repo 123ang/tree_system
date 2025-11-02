@@ -80,21 +80,22 @@ function App() {
       setError(null);
       setLoadingProgress(0);
       
-      // Try to find the root member (self-referring)
-      const rootWallet = '0x479ABda60F8c62a7C3fba411ab948a8BE0E616Ab';
+      // Get the root member from the API
+      setLoadingProgress(20);
+      const member = await apiService.getRootMember();
+      
+      if (!member) {
+        throw new Error('Root member not found in database');
+      }
+      
+      const rootWallet = member.wallet_address;
       
       // Check cache first
       const cached = getCachedData(rootWallet, maxDepth);
       if (cached) {
         console.log('Loading root tree from cache');
         setLoadingProgress(50);
-        setSelectedMember({ 
-          id: cached.tree.id, 
-          wallet_address: cached.tree.wallet_address,
-          joined_at: new Date().toISOString(),
-          activation_sequence: cached.tree.activation_sequence,
-          total_nft_claimed: cached.tree.total_nft_claimed
-        } as Member);
+        setSelectedMember(member);
         setTree(cached.tree);
         setStats(cached.stats);
         setLoadingProgress(100);
@@ -103,9 +104,6 @@ function App() {
         setTimeout(() => setLoadingProgress(0), 500);
         return;
       }
-      
-      setLoadingProgress(20);
-      const member = await apiService.getMemberByWallet(rootWallet);
       
       setLoadingProgress(40);
       const treeData = await apiService.getTreeByWallet(rootWallet, maxDepth);

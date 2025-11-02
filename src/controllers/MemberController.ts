@@ -161,5 +161,20 @@ export class MemberController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+
+  async getRootMember(req: Request, res: Response) {
+    try {
+      const rootMember = await this.memberService.getRootMember();
+      
+      if (!rootMember) {
+        return res.status(404).json({ error: 'Root member not found' });
+      }
+      
+      res.json(rootMember);
+    } catch (error) {
+      console.error('Error getting root member:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 }
 
