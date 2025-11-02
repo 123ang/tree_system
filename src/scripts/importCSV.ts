@@ -19,7 +19,7 @@ interface PlacementCandidate {
   parent_joined_at: string;
 }
 
-class TreeImporter {
+export class TreeImporter {
   private members: MemberData[] = [];
   private memberIdMap: Map<string, number> = new Map(); // wallet -> id
   private sponsorIdMap: Map<string, number> = new Map(); // wallet -> id

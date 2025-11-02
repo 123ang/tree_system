@@ -11,7 +11,8 @@
     "build:backend": "tsc",
     "build:frontend": "cd frontend && npm run build",
     "start": "node dist/server.js",
-    "import-csv": "ts-node src/scripts/importCSV.ts"
+    "import-csv": "ts-node src/scripts/importCSV.ts",
+    "setup-db": "ts-node src/scripts/setupDatabase.ts"
   },
   "dependencies": {
     "axios": "^1.12.2",
