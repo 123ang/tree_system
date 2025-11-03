@@ -191,8 +191,8 @@ export class MemberService {
   }
 
   async getRootMember(): Promise<Member | null> {
-    // Get the member with activation_sequence = 0, or where root_id = id (self-referring root)
-    const query = `
+    // Primary: activation_sequence = 0 or self-root
+    const primary = `
       SELECT m.*, 
              s.wallet_address as sponsor_wallet,
              p.position,
@@ -204,11 +204,23 @@ export class MemberService {
       ORDER BY m.activation_sequence ASC, m.id ASC
       LIMIT 1
     `;
-    
-    const results = await executeQuery(query);
-    const members = results as Member[];
-    
-    return members.length > 0 ? members[0] : null;
+    let rows = await executeQuery(primary) as Member[];
+    if (rows.length > 0) return rows[0];
+
+    // Fallback: first created member
+    const fallback = `
+      SELECT m.*, 
+             s.wallet_address as sponsor_wallet,
+             p.position,
+             (SELECT COUNT(*) FROM placements WHERE parent_id = m.id) as children_count
+      FROM members m
+      LEFT JOIN members s ON m.sponsor_id = s.id
+      LEFT JOIN placements p ON m.id = p.child_id
+      ORDER BY m.id ASC
+      LIMIT 1
+    `;
+    rows = await executeQuery(fallback) as Member[];
+    return rows.length > 0 ? rows[0] : null;
   }
   
   async getMemberLayerInfo(memberId: number): Promise<{
