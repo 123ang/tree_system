@@ -135,25 +135,83 @@ export class TreeImporter {
           // Parse time part: "0.00" -> hours: 0, minutes: 0
           // "1.03" -> hours: 1, minutes: 3
           // "1.30" -> hours: 1, minutes: 30
+          // "0:01" -> hours: 0, minutes: 1
+          // "50:37.6" -> minutes: 50, seconds: 37.6
           const timePart = parts[1] || '0.00';
-          const timeParts = timePart.split('.');
-          const hours = parseInt(timeParts[0] || '0') || 0;
-          const minutes = parseInt(timeParts[1] || '0') || 0;
+          let hours = 0;
+          let minutes = 0;
+          let seconds = 0;
+          
+          if (timePart.includes(':')) {
+            // Handle HH:MM or MM:SS format
+            const timeComponents = timePart.split(':');
+            const firstValue = parseInt(timeComponents[0]) || 0;
+            const secondValue = parseFloat(timeComponents[1]) || 0;
+            
+            // If first value > 23, treat as MM:SS (minutes:seconds)
+            if (firstValue > 23) {
+              minutes = firstValue;
+              seconds = secondValue;
+            } else {
+              // Treat as HH:MM (hours:minutes)
+              hours = firstValue;
+              minutes = Math.floor(secondValue);
+              seconds = Math.floor((secondValue - minutes) * 60);
+            }
+          } else if (timePart.includes('.')) {
+            // Handle H.MM format (hours.minutes)
+            const timeParts = timePart.split('.');
+            hours = parseInt(timeParts[0] || '0') || 0;
+            minutes = parseInt(timeParts[1] || '0') || 0;
+          } else {
+            hours = parseInt(timePart) || 0;
+          }
+          
+          // Normalize time values (handle overflow)
+          minutes += Math.floor(seconds / 60);
+          seconds = seconds % 60;
+          hours += Math.floor(minutes / 60);
+          minutes = minutes % 60;
           
           // Ensure valid ranges
           const validYear = year || new Date().getFullYear();
           const validMonth = (month >= 1 && month <= 12) ? month : 1;
           const validDay = (day >= 1 && day <= 31) ? day : 1;
-          const validHours = (hours >= 0 && hours <= 23) ? hours : 0;
-          const validMinutes = (minutes >= 0 && minutes <= 59) ? minutes : 0;
+          const validHours = Math.floor(hours >= 0 && hours <= 23 ? hours : 0);
+          const validMinutes = Math.floor(minutes >= 0 && minutes <= 59 ? minutes : 0);
+          const validSeconds = Math.floor(seconds >= 0 && seconds < 60 ? seconds : 0);
           
           // Create date in ISO format: "2025-10-15T00:00:00"
           // MySQL datetime format: "2025-10-15 00:00:00"
-          joinedAt = new Date(validYear, validMonth - 1, validDay, validHours, validMinutes, 0);
+          joinedAt = new Date(validYear, validMonth - 1, validDay, validHours, validMinutes, validSeconds);
           
           // Validate the created date
           if (isNaN(joinedAt.getTime())) {
             throw new Error('Invalid date value');
+          }
+        } else if (timeStr.includes(':')) {
+          // Handle time-only format: "50:37.6" (MM:SS.S)
+          // Use a base date (today at midnight) and add the time offset
+          const baseDate = new Date();
+          baseDate.setHours(0, 0, 0, 0);
+          
+          const timeComponents = timeStr.split(':');
+          const firstValue = parseInt(timeComponents[0]) || 0;
+          const secondValue = parseFloat(timeComponents[1]) || 0;
+          
+          // Assume MM:SS format for time-only values
+          let minutes = firstValue;
+          let seconds = secondValue;
+          
+          // Normalize (convert overflow to hours)
+          const hours = Math.floor(minutes / 60);
+          minutes = minutes % 60;
+          
+          joinedAt = new Date(baseDate);
+          joinedAt.setHours(hours, minutes, Math.floor(seconds), Math.floor((seconds % 1) * 1000));
+          
+          if (isNaN(joinedAt.getTime())) {
+            throw new Error('Invalid time-only format');
           }
         } else {
           // Try to parse as standard date string
@@ -265,10 +323,9 @@ export class TreeImporter {
       };
     }
     
-    // Phase B: Even spillover (round-robin)
-    const referralsBefore = activationSequence - 1; // 0-based
-    const k = referralsBefore - 3 + 1; // 1-based position in spillover
-    
+    // Phase B: Even spillover (strict breadth-first)
+    // Always pick the earliest node in the sponsor's subtree (by depth ASC, joined_at ASC) that has < 3 children.
+    // This ensures fill order: A1, A2, A3, then back to A1, A2, A3, ... before going deeper.
     // Get all available slots in sponsor's subtree
     const candidates = await this.getAvailableSlots(sponsorId);
     
@@ -277,9 +334,8 @@ export class TreeImporter {
       return null;
     }
     
-    // Round-robin selection
-    const selectedIndex = (k - 1) % candidates.length;
-    return candidates[selectedIndex];
+    // Select the first candidate to enforce BFS fill order
+    return candidates[0];
   }
 
   private async getAvailableSlots(sponsorId: number): Promise<PlacementCandidate[]> {
@@ -292,7 +348,8 @@ export class TreeImporter {
       JOIN member_closure mc ON m.id = mc.descendant_id
       WHERE mc.ancestor_id = ? 
         AND (SELECT COUNT(*) FROM placements p WHERE p.parent_id = m.id) < 3
-      ORDER BY mc.depth ASC, m.joined_at ASC, m.id ASC
+      -- Prioritize shallower nodes first to fully distribute among A1/A2/A3 before deeper levels
+      ORDER BY mc.depth ASC, child_count ASC, m.joined_at ASC, m.id ASC
     `;
     
     const results = await executeQuery(query, [sponsorId]);
@@ -419,22 +476,33 @@ async function main() {
     if (fs.existsSync(userPath)) {
       csvPath = userPath;
     } else {
-      // Try as relative path from project root
-      const relativePath = path.join(__dirname, '../../', userPath);
-      if (fs.existsSync(relativePath)) {
-        csvPath = relativePath;
+      // Try in csv folder first
+      const csvFolderPath = path.join(__dirname, '../../csv/', userPath);
+      if (fs.existsSync(csvFolderPath)) {
+        csvPath = csvFolderPath;
       } else {
-        console.error(`File not found: ${userPath}`);
-        process.exit(1);
+        // Try as relative path from project root
+        const relativePath = path.join(__dirname, '../../', userPath);
+        if (fs.existsSync(relativePath)) {
+          csvPath = relativePath;
+        } else {
+          console.error(`File not found: ${userPath}\nTip: Place CSV files in the 'csv/' folder`);
+          process.exit(1);
+        }
       }
     }
   } else {
-    // Try multiple possible CSV file names in order
-    const possiblePaths = [
-      path.join(__dirname, '../../members.csv'),  // Prefer members.csv
-      path.join(__dirname, '../../sponsor tree.csv'),
-      path.join(__dirname, '../../sponsor_tree.csv'),
-    ];
+      // Try multiple possible CSV file names in order (check csv/ folder first, then root)
+      const possiblePaths = [
+        path.join(__dirname, '../../csv/members.csv'),
+        path.join(__dirname, '../../csv/sponsor tree1.0.1.csv'),
+        path.join(__dirname, '../../csv/sponsor tree.csv'),
+        path.join(__dirname, '../../csv/sponsor_tree.csv'),
+        path.join(__dirname, '../../members.csv'),  // Fallback to root
+        path.join(__dirname, '../../sponsor tree1.0.1.csv'),
+        path.join(__dirname, '../../sponsor tree.csv'),
+        path.join(__dirname, '../../sponsor_tree.csv'),
+      ];
     
     for (const p of possiblePaths) {
       if (fs.existsSync(p)) {

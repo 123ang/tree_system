@@ -50,7 +50,7 @@ const TreeViewerDebug: React.FC<TreeViewerDebugProps> = ({ tree, onNodeClick, ma
       if (visited.has(node.id)) return;
       visited.add(node.id);
 
-      const label = `${node.wallet_address.slice(0, 6)}...${node.wallet_address.slice(-4)}`;
+      const label = node.wallet_address;
       
       elements.push({
         data: {
@@ -131,7 +131,9 @@ const TreeViewerDebug: React.FC<TreeViewerDebugProps> = ({ tree, onNodeClick, ma
                 'width': '60px',
                 'height': '60px',
                 'border-width': 2,
-                'border-color': '#0056b3'
+                'border-color': '#0056b3',
+                'text-wrap': 'wrap',
+                'text-max-width': '50px'
               }
             },
             {

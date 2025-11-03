@@ -105,7 +105,7 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
       if (visited.has(node.id)) return;
       visited.add(node.id);
 
-      const label = `${node.wallet_address.slice(0, 6)}...${node.wallet_address.slice(-4)}`;
+      const label = node.wallet_address;
       
       elements.push({
         data: {

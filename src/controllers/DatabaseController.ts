@@ -22,8 +22,22 @@ export class DatabaseController {
       res.write(JSON.stringify({ status: 'started', message: 'Starting database setup...\n' }) + '\n');
 
       const scriptPath = path.join(__dirname, '..', 'scripts', 'setupDatabase.ts');
-      const tsNode = spawn('npx', ['ts-node', scriptPath, csvFile], {
-        cwd: path.join(__dirname, '..', '..'),
+      // Use full path to CSV file to avoid issues with spaces in filename
+      const projectRoot = path.join(__dirname, '..', '..');
+      const csvFolder = path.join(projectRoot, 'csv');
+      const fs = require('fs');
+      
+      // Check if file exists in csv folder first, then project root
+      let csvPath = path.join(csvFolder, csvFile);
+      if (!fs.existsSync(csvPath)) {
+        csvPath = path.join(projectRoot, csvFile);
+      }
+      
+      // Build command string with proper quoting for Windows
+      const command = `npx ts-node "${scriptPath}" "${csvPath}"`;
+      
+      const tsNode = spawn(command, [], {
+        cwd: projectRoot,
         shell: true
       });
 
@@ -57,7 +71,11 @@ export class DatabaseController {
             output 
           }) + '\n');
         }
-        res.end();
+        
+        // Ensure response is properly ended
+        setTimeout(() => {
+          res.end();
+        }, 100); // Small delay to ensure final message is sent
       });
 
       tsNode.on('error', (error) => {
@@ -94,8 +112,22 @@ export class DatabaseController {
       res.write(JSON.stringify({ status: 'started', message: 'Starting CSV import...\n' }) + '\n');
 
       const scriptPath = path.join(__dirname, '..', 'scripts', 'importCSV.ts');
-      const tsNode = spawn('npx', ['ts-node', scriptPath, csvFile], {
-        cwd: path.join(__dirname, '..', '..'),
+      // Use full path to CSV file to avoid issues with spaces in filename
+      const projectRoot = path.join(__dirname, '..', '..');
+      const csvFolder = path.join(projectRoot, 'csv');
+      const fs = require('fs');
+      
+      // Check if file exists in csv folder first, then project root
+      let csvPath = path.join(csvFolder, csvFile);
+      if (!fs.existsSync(csvPath)) {
+        csvPath = path.join(projectRoot, csvFile);
+      }
+      
+      // Build command string with proper quoting for Windows
+      const command = `npx ts-node "${scriptPath}" "${csvPath}"`;
+      
+      const tsNode = spawn(command, [], {
+        cwd: projectRoot,
         shell: true
       });
 
@@ -129,7 +161,11 @@ export class DatabaseController {
             output 
           }) + '\n');
         }
-        res.end();
+        
+        // Ensure response is properly ended
+        setTimeout(() => {
+          res.end();
+        }, 100); // Small delay to ensure final message is sent
       });
 
       tsNode.on('error', (error) => {
@@ -138,7 +174,11 @@ export class DatabaseController {
           message: `Error: ${error.message}`,
           output 
         }) + '\n');
-        res.end();
+        
+        // Ensure response is properly ended
+        setTimeout(() => {
+          res.end();
+        }, 100);
       });
 
     } catch (error: any) {
@@ -154,12 +194,19 @@ export class DatabaseController {
     try {
       const fs = require('fs');
       const projectRoot = path.join(__dirname, '..', '..');
+      const csvFolder = path.join(projectRoot, 'csv');
       
-      const files = fs.readdirSync(projectRoot)
+      // Check if csv folder exists, if not fall back to project root
+      let searchDir = projectRoot;
+      if (fs.existsSync(csvFolder)) {
+        searchDir = csvFolder;
+      }
+      
+      const files = fs.readdirSync(searchDir)
         .filter((file: string) => file.endsWith('.csv'))
         .map((file: string) => ({
           name: file,
-          path: path.join(projectRoot, file)
+          path: path.join(searchDir, file)
         }));
 
       res.json({ files });

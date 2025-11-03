@@ -83,18 +83,29 @@ async function setupDatabase() {
       if (fs.existsSync(userPath)) {
         csvPath = userPath;
       } else {
-        // Try as relative path from project root
-        const relativePath = path.join(__dirname, '../../', userPath);
-        if (fs.existsSync(relativePath)) {
-          csvPath = relativePath;
+        // Try in csv folder first
+        const csvFolderPath = path.join(__dirname, '../../csv/', userPath);
+        if (fs.existsSync(csvFolderPath)) {
+          csvPath = csvFolderPath;
         } else {
-          throw new Error(`CSV file not found: ${userPath}`);
+          // Try as relative path from project root
+          const relativePath = path.join(__dirname, '../../', userPath);
+          if (fs.existsSync(relativePath)) {
+            csvPath = relativePath;
+          } else {
+            throw new Error(`CSV file not found: ${userPath}\nTip: Place CSV files in the 'csv/' folder`);
+          }
         }
       }
     } else {
-      // Try multiple possible CSV file names in order
+      // Try multiple possible CSV file names in order (check csv/ folder first, then root)
       const possiblePaths = [
-        path.join(__dirname, '../../members.csv'),  // Prefer members.csv
+        path.join(__dirname, '../../csv/members.csv'),
+        path.join(__dirname, '../../csv/sponsor tree1.0.1.csv'),
+        path.join(__dirname, '../../csv/sponsor tree.csv'),
+        path.join(__dirname, '../../csv/sponsor_tree.csv'),
+        path.join(__dirname, '../../members.csv'),  // Fallback to root
+        path.join(__dirname, '../../sponsor tree1.0.1.csv'),
         path.join(__dirname, '../../sponsor tree.csv'),
         path.join(__dirname, '../../sponsor_tree.csv'),
       ];
