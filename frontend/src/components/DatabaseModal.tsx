@@ -1,0 +1,200 @@
+import React, { useState, useEffect } from 'react';
+import './DatabaseModal.css';
+
+interface DatabaseModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+interface LogEntry {
+  status: string;
+  message: string;
+}
+
+export const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose }) => {
+  const [csvFiles, setCsvFiles] = useState<string[]>([]);
+  const [selectedFile, setSelectedFile] = useState<string>('sponsor tree.csv');
+  const [isLoading, setIsLoading] = useState(false);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [operationType, setOperationType] = useState<'setup' | 'import' | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadCSVFiles();
+    }
+  }, [isOpen]);
+
+  const loadCSVFiles = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/database/csv-files');
+      const data = await response.json();
+      setCsvFiles(data.files.map((f: any) => f.name));
+    } catch (error) {
+      console.error('Error loading CSV files:', error);
+      setCsvFiles(['sponsor tree.csv', 'members.csv']);
+    }
+  };
+
+  const handleOperation = async (type: 'setup' | 'import') => {
+    setIsLoading(true);
+    setLogs([]);
+    setOperationType(type);
+
+    try {
+      const endpoint = type === 'setup' 
+        ? 'http://localhost:3000/api/database/setup'
+        : 'http://localhost:3000/api/database/import';
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ csvFile: selectedFile }),
+      });
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('Response body is not readable');
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(line => line.trim());
+
+        for (const line of lines) {
+          try {
+            const logEntry = JSON.parse(line);
+            setLogs(prev => [...prev, logEntry]);
+          } catch (e) {
+            // Ignore JSON parse errors for incomplete chunks
+          }
+        }
+      }
+    } catch (error: any) {
+      setLogs(prev => [...prev, {
+        status: 'failed',
+        message: `Error: ${error.message}`
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleClose = () => {
+    if (!isLoading) {
+      setLogs([]);
+      setOperationType(null);
+      onClose();
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'started':
+        return '🚀';
+      case 'progress':
+        return '⚙️';
+      case 'completed':
+        return '✅';
+      case 'failed':
+        return '❌';
+      case 'error':
+        return '⚠️';
+      default:
+        return '📝';
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-overlay" onClick={handleClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Database Operations</h2>
+          <button className="close-btn" onClick={handleClose} disabled={isLoading}>
+            ×
+          </button>
+        </div>
+
+        <div className="modal-body">
+          <div className="file-selection">
+            <label htmlFor="csv-file">Select CSV File:</label>
+            <select
+              id="csv-file"
+              value={selectedFile}
+              onChange={(e) => setSelectedFile(e.target.value)}
+              disabled={isLoading}
+            >
+              {csvFiles.map(file => (
+                <option key={file} value={file}>{file}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="operation-buttons">
+            <button
+              className="btn btn-danger"
+              onClick={() => handleOperation('setup')}
+              disabled={isLoading}
+            >
+              🔄 Full Setup
+              <span className="btn-description">
+                Drop database, recreate tables, and import CSV
+              </span>
+            </button>
+
+            <button
+              className="btn btn-success"
+              onClick={() => handleOperation('import')}
+              disabled={isLoading}
+            >
+              📥 Import Only
+              <span className="btn-description">
+                Import CSV without destroying existing data
+              </span>
+            </button>
+          </div>
+
+          {logs.length > 0 && (
+            <div className="logs-container">
+              <h3>Operation Log:</h3>
+              <div className="logs">
+                {logs.map((log, index) => (
+                  <div key={index} className={`log-entry log-${log.status}`}>
+                    <span className="log-icon">{getStatusIcon(log.status)}</span>
+                    <span className="log-message">{log.message}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isLoading && (
+            <div className="loading-spinner">
+              <div className="spinner"></div>
+              <p>Processing... Please wait</p>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button
+            className="btn btn-secondary"
+            onClick={handleClose}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Processing...' : 'Close'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+

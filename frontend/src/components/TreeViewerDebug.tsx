@@ -24,8 +24,20 @@ const TreeViewerDebug: React.FC<TreeViewerDebugProps> = ({ tree, onNodeClick, ma
     setDebugInfo(`Tree received: ${tree ? 'Yes' : 'No'}`);
     
     if (tree) {
+      const countNodes = (node: TreeStructure): number => {
+        let count = 1; // Count this node
+        if (node.children) {
+          node.children.forEach(child => {
+            count += countNodes(child);
+          });
+        }
+        return count;
+      };
+      
+      const totalNodes = countNodes(tree);
       setDebugInfo(prev => prev + `\nRoot ID: ${tree.id}`);
       setDebugInfo(prev => prev + `\nChildren count: ${tree.children?.length || 0}`);
+      setDebugInfo(prev => prev + `\nTotal nodes in tree: ${totalNodes}`);
       setDebugInfo(prev => prev + `\nWallet: ${tree.wallet_address}`);
     }
   }, [tree]);
@@ -68,7 +80,9 @@ const TreeViewerDebug: React.FC<TreeViewerDebugProps> = ({ tree, onNodeClick, ma
     };
 
     addNode(tree);
-    console.log('Converted tree to Cytoscape elements:', elements.length);
+    const nodeElements = elements.filter(e => e.data.id.startsWith('node-'));
+    const edgeElements = elements.filter(e => e.data.id.startsWith('edge-'));
+    console.log(`Converted tree to Cytoscape: ${nodeElements.length} nodes, ${edgeElements.length} edges (total: ${elements.length} elements)`);
     return elements;
   };
 

@@ -4,6 +4,7 @@ import TreeViewerDebug from './components/TreeViewerDebug';
 import SearchBar from './components/SearchBar';
 import MemberDetails from './components/MemberDetails';
 import MemberManagement from './components/MemberManagement';
+import { DatabaseModal } from './components/DatabaseModal';
 import { apiService } from './services/apiClient';
 import { Member, TreeStructure, SubtreeStats } from './types/api';
 
@@ -17,6 +18,7 @@ function App() {
   const [maxDepth, setMaxDepth] = useState(3);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [activeTab, setActiveTab] = useState<'tree' | 'members'>('tree');
+  const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState(false);
   
   // Cache for tree data
   const [treeCache, setTreeCache] = useState<Map<string, { tree: TreeStructure; stats: SubtreeStats; timestamp: number }>>(new Map());
@@ -463,6 +465,23 @@ function App() {
                 Load Root Tree
               </button>
               
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setIsDatabaseModalOpen(true)}
+                style={{ 
+                  marginLeft: '10px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                🔧 Database Operations
+              </button>
+              
               {tree && (
                 <div style={{ marginLeft: 'auto', color: '#666' }}>
                   Showing {maxDepth} level{maxDepth !== 1 ? 's' : ''} of tree
@@ -535,6 +554,17 @@ function App() {
           </>
         )}
       </div>
+
+      {/* Database Operations Modal */}
+      <DatabaseModal 
+        isOpen={isDatabaseModalOpen}
+        onClose={() => {
+          setIsDatabaseModalOpen(false);
+          // Clear cache and reload tree after database operations
+          clearCache();
+          loadRootTree();
+        }}
+      />
     </div>
   );
 }

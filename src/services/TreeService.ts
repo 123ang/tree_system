@@ -117,6 +117,7 @@ export class TreeService {
     const nodes = results as any[];
 
     console.log(`Query returned ${nodes.length} nodes`);
+    console.log(`Node IDs returned: ${nodes.map((n: any) => n.id).join(', ')}`);
 
     if (nodes.length === 0) {
       console.log('No nodes found in tree structure');
@@ -187,8 +188,9 @@ export class TreeService {
     levels: { [depth: number]: number };
   }> {
     // Get total members in subtree
+    // Count all members in closure table (includes root at depth=0 + all descendants)
     const totalQuery = `
-      SELECT COUNT(*) as total
+      SELECT COUNT(DISTINCT descendant_id) as total
       FROM member_closure
       WHERE ancestor_id = ?
     `;
@@ -222,7 +224,7 @@ export class TreeService {
     }
 
     return {
-      totalMembers,
+      totalMembers: totalMembers, // Total count includes root + all descendants
       directChildren,
       maxDepth,
       levels

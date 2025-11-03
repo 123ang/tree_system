@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { TreeController } from './controllers/TreeController';
 import { MemberController } from './controllers/MemberController';
+import { DatabaseController } from './controllers/DatabaseController';
 
 dotenv.config();
 
@@ -65,6 +66,7 @@ app.use(express.static('public'));
 // Initialize controllers
 const treeController = new TreeController();
 const memberController = new MemberController();
+const databaseController = new DatabaseController();
 
 // Routes
 // Tree routes
@@ -83,6 +85,11 @@ app.get('/api/members/:id', (req, res) => memberController.getMemberById(req, re
 app.post('/api/members', (req, res) => memberController.createMember(req, res));
 app.put('/api/members/:id', (req, res) => memberController.updateMember(req, res));
 app.delete('/api/members/:id', (req, res) => memberController.deleteMember(req, res));
+
+// Database operation routes
+app.post('/api/database/setup', (req, res) => databaseController.setupDatabase(req, res));
+app.post('/api/database/import', (req, res) => databaseController.importCSV(req, res));
+app.get('/api/database/csv-files', (req, res) => databaseController.listCSVFiles(req, res));
 
 // Health check
 app.get('/api/health', (req, res) => {
