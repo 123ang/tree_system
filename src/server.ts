@@ -44,19 +44,28 @@ function findAvailablePort(startPort: number, maxAttempts: number = 10): Promise
 }
 
 // Middleware
+// Flexible CORS: allow common localhost ports and your domains; in dev allow any origin
 app.use(cors({
-  origin: [
-    'http://localhost:5173', 
-    'http://127.0.0.1:5173',
-    // Add your production domains here
-    'https://yourdomain.com',
-    'https://www.yourdomain.com',
-    // Allow all origins for widget embedding (be careful in production)
-    ...(process.env.NODE_ENV === 'development' ? ['*'] : [])
-  ],
+  origin: (origin, callback) => {
+    // Allow non-browser requests
+    if (!origin) return callback(null, true);
+
+    const devMode = process.env.NODE_ENV === 'development';
+    if (devMode) return callback(null, true);
+
+    const allowedOrigins = [
+      /^http:\/\/localhost:\d+$/,
+      /^http:\/\/127\.0\.0\.1:\d+$/,
+      /^https:\/\/yourdomain\.com$/,
+      /^https:\/\/www\.yourdomain\.com$/
+    ];
+    const isAllowed = allowedOrigins.some((re) => re.test(origin));
+    return isAllowed ? callback(null, true) : callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 204
 }));
 app.use(express.json());
 

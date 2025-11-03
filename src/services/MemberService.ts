@@ -258,24 +258,48 @@ export class MemberService {
     };
   }
   
-  private async placeMemberInTree(childId: number, parentId: number): Promise<void> {
-    // Find available position (1, 2, or 3)
-    const positionQuery = `
-      SELECT COALESCE(MAX(position), 0) + 1 as next_position
-      FROM placements 
-      WHERE parent_id = ${parentId}
-    `;
-    
-    const positionResult = await executeQuery(positionQuery);
-    const position = Math.min((positionResult as any)[0].next_position, 3);
-    
-    if (position > 3) {
-      throw new Error('Parent already has 3 children. Cannot add more.');
+  private async placeMemberInTree(childId: number, sponsorId: number): Promise<void> {
+    // Check direct children count under sponsor first
+    const directCountResult = await executeQuery(`SELECT COUNT(*) as count FROM placements WHERE parent_id = ${sponsorId}`);
+    const directCount = (directCountResult as any)[0].count as number;
+
+    let targetParentId = sponsorId;
+    let targetPosition = 1;
+
+    if (directCount < 3) {
+      // Place directly under sponsor in next free slot 1..3 (smallest free)
+      const used = await executeQuery(`SELECT position FROM placements WHERE parent_id = ${sponsorId}`) as any[];
+      const usedSet = new Set(used.map(r => r.position));
+      for (let pos = 1; pos <= 3; pos++) {
+        if (!usedSet.has(pos)) { targetPosition = pos; break; }
+      }
+    } else {
+      // Spillover: find first BFS candidate in sponsor's subtree with <3 children
+      const candidatesQuery = `
+        SELECT DISTINCT m.id,
+               (SELECT COUNT(*) FROM placements p WHERE p.parent_id = m.id) as child_count,
+               mc.depth,
+               m.joined_at
+        FROM members m
+        JOIN member_closure mc ON m.id = mc.descendant_id
+        WHERE mc.ancestor_id = ${sponsorId}
+          AND (SELECT COUNT(*) FROM placements p WHERE p.parent_id = m.id) < 3
+        ORDER BY mc.depth ASC, child_count ASC, m.joined_at ASC, m.id ASC
+      `;
+      const candidates = await executeQuery(candidatesQuery) as any[];
+      if (candidates.length === 0) {
+        throw new Error('No available slots for spillover placement');
+      }
+      targetParentId = candidates[0].id;
+      const used = await executeQuery(`SELECT position FROM placements WHERE parent_id = ${targetParentId}`) as any[];
+      const usedSet = new Set(used.map(r => r.position));
+      for (let pos = 1; pos <= 3; pos++) {
+        if (!usedSet.has(pos)) { targetPosition = pos; break; }
+      }
     }
-    
-    // Insert placement
+
     await executeQuery(
-      `INSERT INTO placements (parent_id, child_id, position) VALUES (${parentId}, ${childId}, ${position})`
+      `INSERT INTO placements (parent_id, child_id, position) VALUES (${targetParentId}, ${childId}, ${targetPosition})`
     );
   }
   
