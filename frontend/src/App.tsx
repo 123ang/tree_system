@@ -545,10 +545,9 @@ function App() {
                 </div>
               )}
               
-              <TreeViewerDebug 
+              <TreeViewer 
                 tree={tree}
                 onNodeClick={handleNodeClick}
-                maxDepth={maxDepth}
               />
             </div>
           </>
