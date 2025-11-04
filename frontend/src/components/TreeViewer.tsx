@@ -45,7 +45,7 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
     const elements: any[] = [];
     const visited = new Set<number>();
 
-    const addNode = (node: TreeStructure) => {
+    const addNode = (node: TreeStructure, parentId?: number) => {
       if (visited.has(node.id)) return;
       visited.add(node.id);
 
@@ -58,6 +58,7 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
           wallet: node.wallet_address,
           position: node.position,
           depth: node.depth,
+          parentId: parentId ?? null,
           activation_sequence: node.activation_sequence,
           total_nft_claimed: node.total_nft_claimed
         }
@@ -66,7 +67,7 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
       // Add children
       if (node.children) {
         node.children.forEach(child => {
-          addNode(child);
+          addNode(child, node.id);
           elements.push({
             data: {
               id: `edge-${node.id}-${child.id}`,
@@ -164,7 +165,17 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
             roots: `#node-${tree.id}`,
             spacingFactor: 1.5,
             avoidOverlap: true,
-            nodeDimensionsIncludeLabels: true
+            nodeDimensionsIncludeLabels: true,
+            // Order nodes within the same depth, grouping by parent then by slot (position)
+            depthSort: (a: any, b: any) => {
+              console.log(a.data)
+              const parentA = a.data('parentId') ?? -1;
+              const parentB = b.data('parentId') ?? -1;
+              if (parentA !== parentB) return parentA - parentB;
+              const posA = a.data('position') ?? 999;
+              const posB = b.data('position') ?? 999;
+              return posA - posB; // 1 (left), 2 (center), 3 (right)
+            }
           },
           userZoomingEnabled: true,
           userPanningEnabled: true,
