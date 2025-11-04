@@ -94,6 +94,19 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
         const cytoscape = (window as any).cytoscape;
         const elements = convertTreeToCytoscape(tree);
 
+        // Determine maximum depth of the current tree
+        const getMaxDepth = (node: TreeStructure): number => {
+          if (!node.children || node.children.length === 0) return node.depth ?? 0;
+          const currentDepth = node.depth ?? 0;
+          let maxChild = currentDepth;
+          node.children.forEach((c) => {
+            const d = getMaxDepth(c);
+            if (d > maxChild) maxChild = d;
+          });
+          return maxChild;
+        };
+        const maxTreeDepth = getMaxDepth(tree);
+
         // Clean up existing instance
         if (cyRef.current) {
           try {
@@ -166,16 +179,15 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, maxDepth = 3
             spacingFactor: 1.5,
             avoidOverlap: true,
             nodeDimensionsIncludeLabels: true,
-            // Order nodes within the same depth, grouping by parent then by slot (position)
-            depthSort: (a: any, b: any) => {
-              console.log(a.data)
+            // Apply sibling order only for shallow trees (<= 2 levels)
+            depthSort: maxTreeDepth <= 2 ? ((a: any, b: any) => {
               const parentA = a.data('parentId') ?? -1;
               const parentB = b.data('parentId') ?? -1;
               if (parentA !== parentB) return parentA - parentB;
               const posA = a.data('position') ?? 999;
               const posB = b.data('position') ?? 999;
               return posA - posB; // 1 (left), 2 (center), 3 (right)
-            }
+            }) : undefined
           },
           userZoomingEnabled: true,
           userPanningEnabled: true,
