@@ -271,7 +271,9 @@ export class TreeImporterOnly {
       }
       
       // Set root_id and sponsor_id for root member
-      if (member.activation_sequence === 0 || member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
+      // In import-only mode, only treat as root if self-referring or no referrer
+      // activation_sequence = 0 just means first in this CSV, not necessarily root
+      if (member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
         await executeQuery(
           'UPDATE members SET root_id = ? WHERE id = ?',
           [memberId, memberId]
@@ -279,7 +281,7 @@ export class TreeImporterOnly {
         this.sponsorIdMap.set(member.wallet_address, memberId);
         
         await executeQuery(
-          'INSERT INTO member_closure (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
+          'INSERT IGNORE INTO member_closure (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
           [memberId, memberId, 0]
         );
       }
@@ -330,7 +332,10 @@ export class TreeImporterOnly {
     console.log('Applying placement algorithm...');
     
     for (const member of this.members) {
-      if (member.activation_sequence === 0 || member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
+      // In import-only mode, only skip if self-referring or no referrer
+      // activation_sequence = 0 just means first in this CSV, not necessarily root
+      if (member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
+        console.log(`Skipping root member: ${member.wallet_address}`);
         continue;
       }
       
@@ -446,6 +451,21 @@ export class TreeImporterOnly {
       }
     }
 
+    // Ensure parent has a self-link in closure table (critical for import-only mode)
+    // This ensures that when we query for parent's ancestors, we get at least the parent itself
+    const parentSelfLinkCheck = await executeQuery(
+      'SELECT COUNT(*) as count FROM member_closure WHERE ancestor_id = ? AND descendant_id = ? AND depth = 0',
+      [parentId, parentId]
+    );
+    
+    if ((parentSelfLinkCheck as any[])[0]?.count === 0) {
+      console.log(`Creating missing self-link for parent ${parentId} in closure table`);
+      await executeQuery(
+        'INSERT IGNORE INTO member_closure (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
+        [parentId, parentId, 0]
+      );
+    }
+
     const queries = [
       {
         query: 'INSERT INTO placements (parent_id, child_id, position) VALUES (?, ?, ?)',
@@ -456,8 +476,10 @@ export class TreeImporterOnly {
         params: [memberId, memberId, 0]
       },
       {
+        // Insert closure entries for all ancestors of parent (including parent itself)
+        // This will create (parent, child, 1) and (ancestor, child, ancestor_depth + 1) for all ancestors
         query: `
-          INSERT INTO member_closure (ancestor_id, descendant_id, depth)
+          INSERT IGNORE INTO member_closure (ancestor_id, descendant_id, depth)
           SELECT ancestor_id, ?, depth + 1
           FROM member_closure
           WHERE descendant_id = ?
