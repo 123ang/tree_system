@@ -12,6 +12,7 @@
     "build:frontend": "cd frontend && npm run build",
     "start": "node dist/server.js",
     "import-csv": "ts-node src/scripts/importCSV.ts",
+    "import-csv-only": "ts-node src/scripts/importCSVOnly.ts",
     "setup-db": "ts-node src/scripts/setupDatabase.ts",
     "check-members": "ts-node src/scripts/checkMembers.ts"
   },

@@ -19,13 +19,16 @@ interface PlacementCandidate {
   parent_joined_at: string;
 }
 
-export class TreeImporter {
+export class TreeImporterOnly {
   private members: MemberData[] = [];
   private memberIdMap: Map<string, number> = new Map(); // wallet -> id
   private sponsorIdMap: Map<string, number> = new Map(); // wallet -> id
 
   async importCSV(filePath: string) {
-    console.log('Starting CSV import (full setup mode)...');
+    console.log('Starting CSV import (import-only mode)...');
+    
+    // Load existing members from database first (for import-only mode)
+    await this.loadExistingMembers();
     
     // Read and parse CSV
     await this.readCSV(filePath);
@@ -43,25 +46,49 @@ export class TreeImporter {
     
     console.log('CSV import completed successfully!');
   }
+  
+  /**
+   * Load existing members from database into memberIdMap and sponsorIdMap
+   * This is necessary for import-only mode where referrers may already exist
+   */
+  private async loadExistingMembers(): Promise<void> {
+    console.log('Loading existing members from database...');
+    
+    try {
+      const query = 'SELECT id, wallet_address, sponsor_id FROM members';
+      const results = await executeQuery(query, []);
+      
+      for (const row of results as any[]) {
+        const wallet = row.wallet_address;
+        const id = row.id;
+        
+        // Add to memberIdMap
+        this.memberIdMap.set(wallet, id);
+        
+        // Add to sponsorIdMap - all members in the database can be sponsors
+        // (even if they don't have a sponsor_id, they can still sponsor others)
+        this.sponsorIdMap.set(wallet, id);
+      }
+      
+      console.log(`Loaded ${this.memberIdMap.size} existing members from database`);
+    } catch (error) {
+      console.warn('Could not load existing members (this is OK if database is empty):', error);
+    }
+  }
 
   private removeBOM(str: string): string {
-    // Remove BOM (Byte Order Mark) character if present
     return str.replace(/^\uFEFF/, '');
   }
 
   private getColumnValue(row: any, ...possibleKeys: string[]): string {
-    // Try each possible key, handling BOM variations
     for (const key of possibleKeys) {
-      // Try exact key
       if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
         return String(row[key]);
       }
-      // Try with BOM
       const bomKey = '\uFEFF' + key;
       if (row[bomKey] !== undefined && row[bomKey] !== null && row[bomKey] !== '') {
         return String(row[bomKey]);
       }
-      // Try keys with BOM removed from row keys
       for (const rowKey of Object.keys(row)) {
         if (this.removeBOM(rowKey) === key && row[rowKey] !== undefined && row[rowKey] !== null && row[rowKey] !== '') {
           return String(row[rowKey]);
@@ -76,8 +103,6 @@ export class TreeImporter {
       fs.createReadStream(filePath)
         .pipe(csv())
         .on('data', (row) => {
-          // Support both formats: original (wallet_address) and sponsor tree CSV (User Name)
-          // Handle BOM character that might be in column names
           const wallet_address = this.getColumnValue(row, 'wallet_address', 'User Name', 'user_name').trim();
           const referrer_wallet = this.getColumnValue(row, 'referrer_wallet', 'Referrer_User Name', 'referrer_user_name', 'Referrer User Name').trim();
           
@@ -112,54 +137,41 @@ export class TreeImporter {
     console.log('Importing members...');
     
     for (const member of this.members) {
-      // Parse activation time - handle format like "2025/10/15 0.00" or "2025/10/15 1.03"
-      // Format: "YYYY/MM/DD H.MM" where H is hours (0-23) and MM is minutes (00-59)
       let joinedAt: Date;
       try {
         let timeStr = member.activation_time.trim();
         
         if (timeStr.includes('/')) {
-          // Parse format: "2025/10/15 0.00" -> "2025-10-15 00:00:00"
           const parts = timeStr.split(/\s+/);
           if (parts.length < 2) {
             throw new Error('Invalid date format');
           }
           
-          // Parse date part: "2025/10/15"
           const datePart = parts[0].split('/');
           if (datePart.length !== 3) {
             throw new Error('Invalid date format');
           }
           const [year, month, day] = datePart.map(n => parseInt(n.trim()));
           
-          // Parse time part: "0.00" -> hours: 0, minutes: 0
-          // "1.03" -> hours: 1, minutes: 3
-          // "1.30" -> hours: 1, minutes: 30
-          // "0:01" -> hours: 0, minutes: 1
-          // "50:37.6" -> minutes: 50, seconds: 37.6
           const timePart = parts[1] || '0.00';
           let hours = 0;
           let minutes = 0;
           let seconds = 0;
           
           if (timePart.includes(':')) {
-            // Handle HH:MM or MM:SS format
             const timeComponents = timePart.split(':');
             const firstValue = parseInt(timeComponents[0]) || 0;
             const secondValue = parseFloat(timeComponents[1]) || 0;
             
-            // If first value > 23, treat as MM:SS (minutes:seconds)
             if (firstValue > 23) {
               minutes = firstValue;
               seconds = secondValue;
             } else {
-              // Treat as HH:MM (hours:minutes)
               hours = firstValue;
               minutes = Math.floor(secondValue);
               seconds = Math.floor((secondValue - minutes) * 60);
             }
           } else if (timePart.includes('.')) {
-            // Handle H.MM format (hours.minutes)
             const timeParts = timePart.split('.');
             hours = parseInt(timeParts[0] || '0') || 0;
             minutes = parseInt(timeParts[1] || '0') || 0;
@@ -167,13 +179,11 @@ export class TreeImporter {
             hours = parseInt(timePart) || 0;
           }
           
-          // Normalize time values (handle overflow)
           minutes += Math.floor(seconds / 60);
           seconds = seconds % 60;
           hours += Math.floor(minutes / 60);
           minutes = minutes % 60;
           
-          // Ensure valid ranges
           const validYear = year || new Date().getFullYear();
           const validMonth = (month >= 1 && month <= 12) ? month : 1;
           const validDay = (day >= 1 && day <= 31) ? day : 1;
@@ -181,17 +191,12 @@ export class TreeImporter {
           const validMinutes = Math.floor(minutes >= 0 && minutes <= 59 ? minutes : 0);
           const validSeconds = Math.floor(seconds >= 0 && seconds < 60 ? seconds : 0);
           
-          // Create date in ISO format: "2025-10-15T00:00:00"
-          // MySQL datetime format: "2025-10-15 00:00:00"
           joinedAt = new Date(validYear, validMonth - 1, validDay, validHours, validMinutes, validSeconds);
           
-          // Validate the created date
           if (isNaN(joinedAt.getTime())) {
             throw new Error('Invalid date value');
           }
         } else if (timeStr.includes(':')) {
-          // Handle time-only format: "50:37.6" (MM:SS.S)
-          // Use a base date (today at midnight) and add the time offset
           const baseDate = new Date();
           baseDate.setHours(0, 0, 0, 0);
           
@@ -199,11 +204,9 @@ export class TreeImporter {
           const firstValue = parseInt(timeComponents[0]) || 0;
           const secondValue = parseFloat(timeComponents[1]) || 0;
           
-          // Assume MM:SS format for time-only values
           let minutes = firstValue;
           let seconds = secondValue;
           
-          // Normalize (convert overflow to hours)
           const hours = Math.floor(minutes / 60);
           minutes = minutes % 60;
           
@@ -214,7 +217,6 @@ export class TreeImporter {
             throw new Error('Invalid time-only format');
           }
         } else {
-          // Try to parse as standard date string
           joinedAt = new Date(timeStr);
           if (isNaN(joinedAt.getTime())) {
             throw new Error('Invalid date format');
@@ -225,27 +227,50 @@ export class TreeImporter {
         joinedAt = new Date();
       }
       
-      // Insert new member (full setup mode - always insert)
-      const result = await executeQuery(
-        'INSERT INTO members (wallet_address, activation_sequence, current_level, total_nft_claimed, joined_at) VALUES (?, ?, ?, ?, ?)',
-        [
-          member.wallet_address,
-          member.activation_sequence,
-          member.current_level,
-          member.total_nft_claimed,
-          joinedAt
-        ]
-      );
+      // Check if member already exists
+      let memberId = this.memberIdMap.get(member.wallet_address);
       
-      const memberId = (result as any).insertId;
+      if (memberId) {
+        // Member already exists, update if needed
+        await executeQuery(
+          'UPDATE members SET activation_sequence = ?, current_level = ?, total_nft_claimed = ?, joined_at = ? WHERE id = ?',
+          [
+            member.activation_sequence,
+            member.current_level,
+            member.total_nft_claimed,
+            joinedAt,
+            memberId
+          ]
+        );
+        console.log(`Updated existing member ${member.wallet_address} (ID: ${memberId})`);
+      } else {
+        // Member doesn't exist, insert new one
+        const result = await executeQuery(
+          'INSERT INTO members (wallet_address, activation_sequence, current_level, total_nft_claimed, joined_at) VALUES (?, ?, ?, ?, ?)',
+          [
+            member.wallet_address,
+            member.activation_sequence,
+            member.current_level,
+            member.total_nft_claimed,
+            joinedAt
+          ]
+        );
+        
+        memberId = (result as any).insertId;
+        if (!memberId) {
+          console.error(`Failed to get insertId for member ${member.wallet_address}`);
+          continue;
+        }
+        this.memberIdMap.set(member.wallet_address, memberId);
+        console.log(`Inserted new member ${member.wallet_address} (ID: ${memberId})`);
+      }
+      
       if (!memberId) {
-        console.error(`Failed to get insertId for member ${member.wallet_address}`);
+        console.error(`Member ID is undefined for ${member.wallet_address}, skipping...`);
         continue;
       }
-      this.memberIdMap.set(member.wallet_address, memberId);
-      console.log(`Inserted new member ${member.wallet_address} (ID: ${memberId})`);
       
-      // Set root_id and sponsor_id for root member (activation_sequence = 0 or self-referring)
+      // Set root_id and sponsor_id for root member
       if (member.activation_sequence === 0 || member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
         await executeQuery(
           'UPDATE members SET root_id = ? WHERE id = ?',
@@ -253,7 +278,6 @@ export class TreeImporter {
         );
         this.sponsorIdMap.set(member.wallet_address, memberId);
         
-        // Create self-reference in closure table for root member
         await executeQuery(
           'INSERT INTO member_closure (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
           [memberId, memberId, 0]
@@ -264,27 +288,57 @@ export class TreeImporter {
     console.log('Members imported successfully');
   }
 
+  /**
+   * Find sponsor ID for a member, checking maps and database
+   * Returns the sponsor ID or null if not found
+   */
+  private async findSponsorId(referrerWallet: string): Promise<number | null> {
+    const sponsorIdFromMap = this.sponsorIdMap.get(referrerWallet);
+    if (sponsorIdFromMap !== undefined) {
+      return sponsorIdFromMap;
+    }
+    
+    const memberIdFromMap = this.memberIdMap.get(referrerWallet);
+    if (memberIdFromMap !== undefined) {
+      this.sponsorIdMap.set(referrerWallet, memberIdFromMap);
+      return memberIdFromMap;
+    }
+    
+    // Check database (for import-only mode where referrer exists from previous import)
+    try {
+      const sponsorQuery = 'SELECT id, sponsor_id FROM members WHERE wallet_address = ?';
+      const sponsorResults = await executeQuery(sponsorQuery, [referrerWallet]);
+      
+      if ((sponsorResults as any[]).length > 0) {
+        const sponsorRow = (sponsorResults as any[])[0];
+        const sponsorId: number = sponsorRow.id;
+        
+        this.memberIdMap.set(referrerWallet, sponsorId);
+        this.sponsorIdMap.set(referrerWallet, sponsorId);
+        
+        console.log(`Found referrer ${referrerWallet} (ID: ${sponsorId}) in database`);
+        return sponsorId;
+      }
+    } catch (error) {
+      console.error(`Error looking up referrer ${referrerWallet} in database:`, error);
+    }
+    
+    return null;
+  }
+
   private async applyPlacementAlgorithm(): Promise<void> {
     console.log('Applying placement algorithm...');
     
     for (const member of this.members) {
-      // Skip root member (activation_sequence = 0 or self-referring)
       if (member.activation_sequence === 0 || member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
         continue;
       }
       
-      // Find sponsor ID from maps (full setup mode - sponsor should be in CSV already)
-      let sponsorId = this.sponsorIdMap.get(member.referrer_wallet);
+      const sponsorId = await this.findSponsorId(member.referrer_wallet);
+      
       if (!sponsorId) {
-        // Try memberIdMap if not in sponsorIdMap yet
-        const sponsorIdFromMap = this.memberIdMap.get(member.referrer_wallet);
-        if (sponsorIdFromMap) {
-          this.sponsorIdMap.set(member.referrer_wallet, sponsorIdFromMap);
-          sponsorId = sponsorIdFromMap;
-        } else {
-          console.error(`Sponsor not found for member ${member.wallet_address}, referrer: ${member.referrer_wallet}`);
-          continue;
-        }
+        console.error(`Sponsor not found for member ${member.wallet_address}, referrer: ${member.referrer_wallet}`);
+        continue;
       }
       
       const memberId = this.memberIdMap.get(member.wallet_address);
@@ -293,7 +347,6 @@ export class TreeImporter {
         continue;
       }
       
-      // Apply placement algorithm
       const placement = await this.findPlacement(sponsorId, member.activation_sequence);
       
       if (placement) {
@@ -306,7 +359,6 @@ export class TreeImporter {
   }
 
   private async findPlacement(sponsorId: number, activationSequence: number): Promise<PlacementCandidate | null> {
-    // Phase A: Check if sponsor has < 3 children
     const directChildren = await executeQuery(
       'SELECT COUNT(*) as count FROM placements WHERE parent_id = ?',
       [sponsorId]
@@ -315,7 +367,6 @@ export class TreeImporter {
     const directCount = (directChildren as any)[0].count;
     
     if (directCount < 3) {
-      // Place directly under sponsor
       return {
         parent_id: sponsorId,
         position: directCount + 1,
@@ -324,10 +375,6 @@ export class TreeImporter {
       };
     }
     
-    // Phase B: Even spillover (strict breadth-first)
-    // Always pick the earliest node in the sponsor's subtree (by depth ASC, joined_at ASC) that has < 3 children.
-    // This ensures fill order: A1, A2, A3, then back to A1, A2, A3, ... before going deeper.
-    // Get all available slots in sponsor's subtree
     const candidates = await this.getAvailableSlots(sponsorId);
     
     if (candidates.length === 0) {
@@ -335,12 +382,10 @@ export class TreeImporter {
       return null;
     }
     
-    // Select the first candidate to enforce BFS fill order
     return candidates[0];
   }
 
   private async getAvailableSlots(sponsorId: number): Promise<PlacementCandidate[]> {
-    // Get all nodes in sponsor's subtree that have < 3 children
     const query = `
       SELECT DISTINCT m.id, m.joined_at, 
              (SELECT COUNT(*) FROM placements p WHERE p.parent_id = m.id) as child_count,
@@ -349,7 +394,6 @@ export class TreeImporter {
       JOIN member_closure mc ON m.id = mc.descendant_id
       WHERE mc.ancestor_id = ? 
         AND (SELECT COUNT(*) FROM placements p WHERE p.parent_id = m.id) < 3
-      -- Prioritize shallower nodes first to fully distribute among A1/A2/A3 before deeper levels
       ORDER BY mc.depth ASC, child_count ASC, m.joined_at ASC, m.id ASC
     `;
     
@@ -362,14 +406,12 @@ export class TreeImporter {
       const depth = row.depth;
       const parentJoinedAt = row.joined_at;
       
-      // Get existing positions for this parent to avoid duplicates
       const existingPositions = await executeQuery(
         'SELECT position FROM placements WHERE parent_id = ?',
         [parentId]
       );
       const usedPositions = new Set((existingPositions as any[]).map(p => p.position));
       
-      // Create slots for each available position
       for (let position = 1; position <= 3; position++) {
         if (!usedPositions.has(position)) {
           slots.push({
@@ -386,14 +428,12 @@ export class TreeImporter {
   }
 
   private async placeMember(memberId: number, parentId: number, position: number, sponsorId: number): Promise<void> {
-    // Check if position is already taken and find next available
     const existingPlacement = await executeQuery(
       'SELECT child_id FROM placements WHERE parent_id = ? AND position = ?',
       [parentId, position]
     );
     
     if ((existingPlacement as any[]).length > 0) {
-      // Find next available position
       for (let pos = 1; pos <= 3; pos++) {
         const checkPos = await executeQuery(
           'SELECT child_id FROM placements WHERE parent_id = ? AND position = ?',
@@ -407,17 +447,14 @@ export class TreeImporter {
     }
 
     const queries = [
-      // Insert placement
       {
         query: 'INSERT INTO placements (parent_id, child_id, position) VALUES (?, ?, ?)',
         params: [parentId, memberId, position]
       },
-      // Add self-link to closure table
       {
         query: 'INSERT INTO member_closure (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
         params: [memberId, memberId, 0]
       },
-      // Add ancestors to closure table
       {
         query: `
           INSERT INTO member_closure (ancestor_id, descendant_id, depth)
@@ -427,7 +464,6 @@ export class TreeImporter {
         `,
         params: [memberId, parentId]
       },
-      // Update member's root_id and sponsor_id
       {
         query: `
           UPDATE members 
@@ -445,10 +481,9 @@ export class TreeImporter {
     } catch (error: any) {
       if (error.code === 'ER_DUP_ENTRY') {
         console.warn(`Duplicate entry detected for member ${memberId}, retrying with different position...`);
-        // Try with position 1, 2, or 3 in order
         for (let pos = 1; pos <= 3; pos++) {
           try {
-            queries[0].params[2] = pos; // Update position
+            queries[0].params[2] = pos;
             await executeTransaction(queries);
             console.log(`Successfully placed member ${memberId} at position ${pos}`);
             return;
@@ -467,22 +502,18 @@ export class TreeImporter {
 
 // Main execution
 async function main() {
-  // Check if a specific file is provided as command line argument
   const args = process.argv.slice(2);
   let csvPath: string | null = null;
   
   if (args.length > 0) {
-    // User specified a file
     const userPath = args[0];
     if (fs.existsSync(userPath)) {
       csvPath = userPath;
     } else {
-      // Try in csv folder first
       const csvFolderPath = path.join(__dirname, '../../csv/', userPath);
       if (fs.existsSync(csvFolderPath)) {
         csvPath = csvFolderPath;
       } else {
-        // Try as relative path from project root
         const relativePath = path.join(__dirname, '../../', userPath);
         if (fs.existsSync(relativePath)) {
           csvPath = relativePath;
@@ -493,17 +524,16 @@ async function main() {
       }
     }
   } else {
-      // Try multiple possible CSV file names in order (check csv/ folder first, then root)
-      const possiblePaths = [
-        path.join(__dirname, '../../csv/members.csv'),
-        path.join(__dirname, '../../csv/sponsor tree1.0.1.csv'),
-        path.join(__dirname, '../../csv/sponsor tree.csv'),
-        path.join(__dirname, '../../csv/sponsor_tree.csv'),
-        path.join(__dirname, '../../members.csv'),  // Fallback to root
-        path.join(__dirname, '../../sponsor tree1.0.1.csv'),
-        path.join(__dirname, '../../sponsor tree.csv'),
-        path.join(__dirname, '../../sponsor_tree.csv'),
-      ];
+    const possiblePaths = [
+      path.join(__dirname, '../../csv/members.csv'),
+      path.join(__dirname, '../../csv/sponsor tree1.0.1.csv'),
+      path.join(__dirname, '../../csv/sponsor tree.csv'),
+      path.join(__dirname, '../../csv/sponsor_tree.csv'),
+      path.join(__dirname, '../../members.csv'),
+      path.join(__dirname, '../../sponsor tree1.0.1.csv'),
+      path.join(__dirname, '../../sponsor tree.csv'),
+      path.join(__dirname, '../../sponsor_tree.csv'),
+    ];
     
     for (const p of possiblePaths) {
       if (fs.existsSync(p)) {
@@ -515,13 +545,13 @@ async function main() {
   
   if (!csvPath) {
     console.error('CSV file not found. Please specify a file:');
-    console.error('  npm run import-csv members.csv');
-    console.error('  npm run import-csv "sponsor tree.csv"');
+    console.error('  npm run import-csv-only members.csv');
+    console.error('  npm run import-csv-only "sponsor tree.csv"');
     process.exit(1);
   }
   
   console.log(`Importing from: ${csvPath}`);
-  const importer = new TreeImporter();
+  const importer = new TreeImporterOnly();
   await importer.importCSV(csvPath);
 }
 

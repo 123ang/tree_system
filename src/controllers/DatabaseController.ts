@@ -111,7 +111,7 @@ export class DatabaseController {
       // Send initial response
       res.write(JSON.stringify({ status: 'started', message: 'Starting CSV import...\n' }) + '\n');
 
-      const scriptPath = path.join(__dirname, '..', 'scripts', 'importCSV.ts');
+      const scriptPath = path.join(__dirname, '..', 'scripts', 'importCSVOnly.ts');
       // Use full path to CSV file to avoid issues with spaces in filename
       const projectRoot = path.join(__dirname, '..', '..');
       const csvFolder = path.join(projectRoot, 'csv');
