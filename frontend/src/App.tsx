@@ -330,24 +330,6 @@ function App() {
     }
   };
 
-  const clearCache = () => {
-    // Clear memory cache
-    setTreeCache(new Map());
-    
-    // Clear localStorage cache
-    try {
-      const keys = Object.keys(localStorage);
-      keys.forEach(key => {
-        if (key.startsWith('tree_cache_')) {
-          localStorage.removeItem(key);
-        }
-      });
-      console.log('Cache cleared successfully');
-    } catch (e) {
-      console.warn('Error clearing localStorage cache:', e);
-    }
-  };
-
   return (
     <div className="container">
       <div className="sidebar">
