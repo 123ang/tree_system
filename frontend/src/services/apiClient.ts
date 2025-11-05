@@ -98,6 +98,11 @@ export class ApiService {
     const response = await apiClient.get(`/level/${id}/${level}?limit=${limit}&offset=${offset}`);
     return response.data;
   }
+
+  async clearCache(): Promise<{ message: string }> {
+    const response = await apiClient.post('/cache/clear');
+    return response.data;
+  }
 }
 
 export const apiService = new ApiService();

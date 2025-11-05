@@ -4,6 +4,7 @@ import './DatabaseModal.css';
 interface DatabaseModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onImportSuccess?: () => void;
 }
 
 interface LogEntry {
@@ -11,7 +12,7 @@ interface LogEntry {
   message: string;
 }
 
-export const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose }) => {
+export const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, onImportSuccess }) => {
   const [csvFiles, setCsvFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string>('sponsor tree.csv');
   const [isLoading, setIsLoading] = useState(false);
@@ -104,6 +105,14 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose })
               operationComplete = true;
               // Append a friendly final log line visible in the UI
               setLogs(prev => [...prev, { status: 'completed', message: '\n✓ Operation finished. You can close this window.' }]);
+              
+              // If operation was successful, trigger cache clear and tree reload
+              if (normalizedStatus === 'completed' && onImportSuccess) {
+                setTimeout(() => {
+                  onImportSuccess();
+                }, 500); // Small delay to ensure UI updates first
+              }
+              
               // Stop loading immediately and cancel the stream so UI updates right away
               setIsLoading(false);
               try {

@@ -70,6 +70,26 @@ function App() {
     }
   };
 
+  const clearCache = () => {
+    console.log('Clearing tree cache...');
+    
+    // Clear in-memory cache
+    setTreeCache(new Map());
+    
+    // Clear localStorage cache
+    try {
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.startsWith('tree_cache_')) {
+          localStorage.removeItem(key);
+        }
+      });
+      console.log('Cache cleared successfully');
+    } catch (e) {
+      console.warn('Error clearing localStorage cache:', e);
+    }
+  };
+
   // Load root tree on startup
   useEffect(() => {
     loadRootTree();
@@ -557,9 +577,9 @@ function App() {
       {/* Database Operations Modal */}
       <DatabaseModal 
         isOpen={isDatabaseModalOpen}
-        onClose={() => {
-          setIsDatabaseModalOpen(false);
-          // Clear cache and reload tree after database operations
+        onClose={() => setIsDatabaseModalOpen(false)}
+        onImportSuccess={() => {
+          // Clear cache and reload tree after successful import
           clearCache();
           loadRootTree();
         }}

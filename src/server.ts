@@ -84,6 +84,7 @@ app.get('/api/tree/wallet/:wallet', (req, res) => treeController.getTreeByWallet
 app.get('/api/search', (req, res) => treeController.searchMembers(req, res));
 app.get('/api/stats/:id', (req, res) => treeController.getSubtreeStats(req, res));
 app.get('/api/level/:id/:level', (req, res) => treeController.getMembersByLevel(req, res));
+app.post('/api/cache/clear', (req, res) => treeController.clearCache(req, res));
 
 // Member CRUD routes
 app.get('/api/members', (req, res) => memberController.getAllMembers(req, res));

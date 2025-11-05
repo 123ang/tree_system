@@ -148,4 +148,15 @@ export class TreeController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+
+  async clearCache(req: Request, res: Response) {
+    try {
+      // This endpoint just signals the frontend to clear its cache
+      // The actual cache clearing happens on the frontend side
+      res.json({ message: 'Cache clear signal sent' });
+    } catch (error) {
+      console.error('Error in clearCache:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 }
