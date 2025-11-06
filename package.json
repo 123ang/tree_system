@@ -14,7 +14,8 @@
     "import-csv": "ts-node src/scripts/importCSV.ts",
     "import-csv-only": "ts-node src/scripts/importCSVOnly.ts",
     "setup-db": "ts-node src/scripts/setupDatabase.ts",
-    "check-members": "ts-node src/scripts/checkMembers.ts"
+    "check-members": "ts-node src/scripts/checkMembers.ts",
+    "setup-beehive": "ts-node src/scripts/setupBeeHive.ts"
   },
   "dependencies": {
     "axios": "^1.12.2",

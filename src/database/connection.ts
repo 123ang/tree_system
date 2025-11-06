@@ -12,8 +12,9 @@ const dbConfig = {
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  // Note: acquireTimeout and timeout are not valid options for mysql2 pool
-  // They are removed to prevent warnings
+  connectTimeout: 10000, // 10 seconds
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0,
 };
 
 // Create connection pool
@@ -26,8 +27,33 @@ export const executeQuery = async (query: string, params: any[] = []) => {
   try {
     const [rows] = await pool.execute(query, params);
     return rows;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Database query error:', error);
+    
+    // Provide helpful error messages for common issues
+    if (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
+      throw new Error(
+        `Cannot connect to MySQL database. Please check:\n` +
+        `1. MySQL server is running\n` +
+        `2. Database credentials in .env file are correct\n` +
+        `3. Host: ${dbConfig.host}, Port: ${dbConfig.port}, Database: ${dbConfig.database}\n` +
+        `4. Database "${dbConfig.database}" exists\n` +
+        `Original error: ${error.message}`
+      );
+    }
+    
+    if (error.code === 'ER_BAD_DB_ERROR') {
+      throw new Error(
+        `Database "${dbConfig.database}" does not exist. Please create it first or check DB_NAME in .env file.`
+      );
+    }
+    
+    if (error.code === 'ER_ACCESS_DENIED_ERROR') {
+      throw new Error(
+        `Access denied. Please check database credentials (DB_USER, DB_PASSWORD) in .env file.`
+      );
+    }
+    
     throw error;
   }
 };

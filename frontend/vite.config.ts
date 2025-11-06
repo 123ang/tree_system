@@ -26,4 +26,8 @@ export default defineConfig({
       },
     },
   },
+  // Handle client-side routing - serve index.html for all routes
+  preview: {
+    port: 5173,
+  },
 })

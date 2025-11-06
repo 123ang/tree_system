@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import { TreeController } from './controllers/TreeController';
 import { MemberController } from './controllers/MemberController';
 import { DatabaseController } from './controllers/DatabaseController';
+import { BeeHiveController } from './controllers/BeeHiveController';
 
 dotenv.config();
 
@@ -76,6 +77,7 @@ app.use(express.static('public'));
 const treeController = new TreeController();
 const memberController = new MemberController();
 const databaseController = new DatabaseController();
+const beeHiveController = new BeeHiveController();
 
 // Routes
 // Tree routes
@@ -100,6 +102,15 @@ app.delete('/api/members/:id', (req, res) => memberController.deleteMember(req, 
 app.post('/api/database/setup', (req, res) => databaseController.setupDatabase(req, res));
 app.post('/api/database/import', (req, res) => databaseController.importCSV(req, res));
 app.get('/api/database/csv-files', (req, res) => databaseController.listCSVFiles(req, res));
+
+// BeeHive routes
+app.get('/api/beehive/levels', (req, res) => beeHiveController.getLevels(req, res));
+app.post('/api/beehive/setup', (req, res) => beeHiveController.setupDatabase(req, res));
+app.post('/api/beehive/process', (req, res) => beeHiveController.processCSV(req, res));
+app.get('/api/beehive/stats', (req, res) => beeHiveController.getSystemStats(req, res));
+app.get('/api/beehive/members', (req, res) => beeHiveController.getAllMemberStats(req, res));
+app.get('/api/beehive/members/:wallet', (req, res) => beeHiveController.getMemberStats(req, res));
+app.get('/api/beehive/members/:wallet/rewards', (req, res) => beeHiveController.getMemberRewards(req, res));
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -171,9 +171,16 @@ export class MemberController {
       }
       
       res.json(rootMember);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error getting root member:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      // Check if it's a "table doesn't exist" error
+      if (error?.code === 'ER_NO_SUCH_TABLE' || error?.message?.includes("doesn't exist")) {
+        return res.status(404).json({ 
+          error: 'Table does not exist', 
+          message: 'Tree structure tables not found. Please set up the database first.' 
+        });
+      }
+      res.status(500).json({ error: 'Internal server error', message: error?.message || 'Unknown error' });
     }
   }
 }

@@ -139,9 +139,67 @@ async function setupDatabase() {
     const importer = new TreeImporter();
     await importer.importCSV(csvPath);
 
+    // Step 8: Setup BeeHive tables
+    console.log('\n🐝 Setting up BeeHive tables...\n');
+    try {
+      const { setupBeeHive } = await import('./setupBeeHive');
+      
+      // Create a new connection for BeeHive setup
+      const beehiveConnection = await mysql.createConnection({
+        host: dbConfig.host,
+        port: dbConfig.port,
+        user: dbConfig.user,
+        password: dbConfig.password,
+        database: databaseName,
+      });
+      
+      // Read BeeHive schema
+      const beehiveSchemaPath = path.join(__dirname, '../database/beehive-schema.sql');
+      if (fs.existsSync(beehiveSchemaPath)) {
+        const beehiveSchema = fs.readFileSync(beehiveSchemaPath, 'utf-8');
+        
+        // Remove FK constraints to members table since members table now exists
+        // (We'll keep them since members table exists after tree import)
+        
+        // Execute BeeHive schema (members table exists now, so FK constraints are OK)
+        const beehiveStatements = beehiveSchema
+          .split(';')
+          .map(s => s.trim().replace(/\n+/g, ' ').replace(/\s+/g, ' '))
+          .filter(s => s.length > 10 && !s.startsWith('--'));
+        
+        for (const statement of beehiveStatements) {
+          try {
+            await beehiveConnection.query(statement);
+            const createMatch = statement.match(/CREATE TABLE (\w+)/i);
+            const insertMatch = statement.match(/INSERT INTO (\w+)/i);
+            if (createMatch) {
+              console.log(`✓ Created BeeHive table: ${createMatch[1]}`);
+            } else if (insertMatch) {
+              console.log(`✓ Inserted data into: ${insertMatch[1]}`);
+            }
+          } catch (error: any) {
+            if (error.code === 'ER_DUP_ENTRY') {
+              continue; // Skip duplicate entries
+            }
+            throw error;
+          }
+        }
+        
+        await beehiveConnection.end();
+        console.log('✅ BeeHive tables created\n');
+      } else {
+        console.log('⚠️  BeeHive schema file not found, skipping BeeHive setup\n');
+      }
+    } catch (error: any) {
+      console.error('⚠️  Warning: Could not setup BeeHive tables:', error.message);
+      console.log('   You can run BeeHive setup separately later\n');
+    }
+
     console.log('\n🎉 Database setup completed successfully!');
     console.log(`\n✅ Database: ${databaseName}`);
-    console.log('✅ Tables: members, placements, member_closure');
+    console.log('✅ Tree structure tables: members, placements, member_closure');
+    console.log('✅ BeeHive tables: beehive_levels, beehive_transactions, beehive_rewards, beehive_layer_counters');
+    console.log('   (BeeHive fields are now in members table: beehive_current_level, beehive_total_inflow, etc.)');
     console.log(`✅ CSV imported: ${path.basename(csvPath)}`);
 
   } catch (error) {

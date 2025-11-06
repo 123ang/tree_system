@@ -1,14 +1,27 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import TreeViewer from './components/TreeViewer';
 import TreeViewerDebug from './components/TreeViewerDebug';
 import SearchBar from './components/SearchBar';
 import MemberDetails from './components/MemberDetails';
 import MemberManagement from './components/MemberManagement';
 import { DatabaseModal } from './components/DatabaseModal';
+import { BeeHive } from './components/BeeHive';
 import { apiService } from './services/apiClient';
 import { Member, TreeStructure, SubtreeStats } from './types/api';
 
-function App() {
+function AppContent() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  // Initialize activeTab based on current route (before any data loading)
+  const [activeTab, setActiveTab] = useState<'tree' | 'members' | 'beehive'>(() => {
+    const path = location.pathname;
+    if (path === '/payout') return 'beehive';
+    if (path === '/members') return 'members';
+    return 'tree';
+  });
+  
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [tree, setTree] = useState<TreeStructure | null>(null);
   const [stats, setStats] = useState<SubtreeStats | null>(null);
@@ -17,7 +30,6 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [maxDepth, setMaxDepth] = useState(3);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [activeTab, setActiveTab] = useState<'tree' | 'members'>('tree');
   const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState(false);
   
   // Cache for tree data
@@ -90,12 +102,38 @@ function App() {
     }
   };
 
-  // Load root tree on startup
+  // Sync activeTab with route changes
   useEffect(() => {
-    loadRootTree();
-  }, []);
+    const path = location.pathname;
+    if (path === '/payout') {
+      setActiveTab('beehive');
+    } else if (path === '/members') {
+      setActiveTab('members');
+    } else if (path === '/') {
+      setActiveTab('tree');
+    }
+  }, [location.pathname]);
+
+  // Load root tree on startup only if tree tab is active AND we're on the root path
+  // Don't load if we're on beehive or members routes
+  useEffect(() => {
+    // Only load tree if we're on the tree tab and root path
+    // Skip loading if we're on beehive or members routes
+    const path = location.pathname;
+    if (activeTab === 'tree' && path === '/' && path !== '/payout' && path !== '/members') {
+      loadRootTree().catch(err => {
+        // Silently handle errors - tables might not exist yet
+        console.log('Could not load root tree (database may not be set up):', err);
+      });
+    }
+  }, [activeTab, location.pathname]);
 
   const loadRootTree = async () => {
+    // Don't load if we're not on the tree route
+    if (location.pathname !== '/' || activeTab !== 'tree') {
+      return;
+    }
+    
     try {
       setIsLoading(true);
       setIsTreeLoading(true);
@@ -142,9 +180,24 @@ function App() {
       setCachedData(rootWallet, maxDepth, treeData, statsData);
       
       setLoadingProgress(100);
-    } catch (err) {
-      console.error('Error loading root tree:', err);
-      setError('Failed to load tree data. Make sure the backend is running and database is set up.');
+    } catch (err: any) {
+      // Only show error if we're actually on the tree route
+      if (location.pathname === '/' && activeTab === 'tree') {
+        console.error('Error loading root tree:', err);
+        // Check if it's a "table doesn't exist" error - don't show error for this
+        if (err?.response?.data?.code === 'ER_NO_SUCH_TABLE' ||
+            err?.response?.data?.message?.includes("doesn't exist") || 
+            err?.message?.includes("doesn't exist") ||
+            err?.response?.data?.error?.includes("ER_NO_SUCH_TABLE")) {
+          // Don't show error - user might be setting up database
+          console.log('Tree tables not set up yet');
+          setError(null);
+        } else {
+          setError(err.response?.data?.error || err.message || 'Failed to load tree data.');
+        }
+      }
+      setTree(null);
+      setStats(null);
     } finally {
       setIsLoading(false);
       setIsTreeLoading(false);
@@ -338,15 +391,30 @@ function App() {
         <div className="tab-buttons">
           <button
             className={`tab-button ${activeTab === 'tree' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tree')}
+            onClick={() => {
+              setActiveTab('tree');
+              navigate('/');
+            }}
           >
-            Tree View
+            🌳 Tree View
           </button>
           <button
             className={`tab-button ${activeTab === 'members' ? 'active' : ''}`}
-            onClick={() => setActiveTab('members')}
+            onClick={() => {
+              setActiveTab('members');
+              navigate('/members');
+            }}
           >
-            Member Management
+            👥 Members
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'beehive' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('beehive');
+              navigate('/payout');
+            }}
+          >
+            🐝 BeeHive
           </button>
         </div>
         
@@ -448,112 +516,116 @@ function App() {
       </div>
 
       <div className="main-content">
-        {activeTab === 'members' ? (
-          <MemberManagement 
-            onMemberSelect={handleMemberSelect}
-            onRefresh={() => {
-              // Clear cache when members are updated
-              clearCache();
-            }}
-          />
-        ) : (
-          <>
-            <div className="toolbar">
-              <button 
-                className="btn btn-primary" 
-                onClick={loadRootTree}
-                disabled={isLoading}
-              >
-                Load Root Tree
-              </button>
-              
-              <button 
-                className="btn btn-secondary" 
-                onClick={() => setIsDatabaseModalOpen(true)}
-                style={{ 
-                  marginLeft: '10px',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  color: 'white',
-                  border: 'none',
-                  padding: '8px 16px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
-              >
-                🔧 Database Operations
-              </button>
-              
-              {tree && (
-                <div style={{ marginLeft: 'auto', color: '#666' }}>
-                  Showing {maxDepth} level{maxDepth !== 1 ? 's' : ''} of tree
-                </div>
-              )}
-            </div>
+        <Routes>
+          <Route path="/payout" element={<BeeHive />} />
+          <Route path="/members" element={
+            <MemberManagement 
+              onMemberSelect={handleMemberSelect}
+              onRefresh={() => {
+                // Clear cache when members are updated
+                clearCache();
+              }}
+            />
+          } />
+          <Route path="/" element={
+            <>
+              <div className="toolbar">
+                <button 
+                  className="btn btn-primary" 
+                  onClick={loadRootTree}
+                  disabled={isLoading}
+                >
+                  Load Root Tree
+                </button>
+                
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={() => setIsDatabaseModalOpen(true)}
+                  style={{ 
+                    marginLeft: '10px',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  🔧 Database Operations
+                </button>
+                
+                {tree && (
+                  <div style={{ marginLeft: 'auto', color: '#666' }}>
+                    Showing {maxDepth} level{maxDepth !== 1 ? 's' : ''} of tree
+                  </div>
+                )}
+              </div>
 
-            <div className="tree-container">
-              {error && (
-                <div className="error">
-                  {error}
-                </div>
-              )}
-              
-              {isLoading && !tree && (
-                <div className="loading">
-                  <div style={{ textAlign: 'center', padding: '50px' }}>
+              <div className="tree-container">
+                {error && (
+                  <div className="error">
+                    {error}
+                  </div>
+                )}
+                
+                {isLoading && !tree && (
+                  <div className="loading">
+                    <div style={{ textAlign: 'center', padding: '50px' }}>
+                      <div style={{ 
+                        width: '40px', 
+                        height: '40px', 
+                        border: '4px solid #e0e0e0',
+                        borderTop: '4px solid #007bff',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite',
+                        margin: '0 auto 20px'
+                      }} />
+                      <div>Loading tree data...</div>
+                      <div style={{ fontSize: '12px', color: '#666', marginTop: '10px' }}>
+                        {loadingProgress}% complete
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {isTreeLoading && tree && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    background: 'rgba(255, 255, 255, 0.9)',
+                    padding: '20px',
+                    borderRadius: '8px',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                    zIndex: 1000,
+                    textAlign: 'center'
+                  }}>
                     <div style={{ 
-                      width: '40px', 
-                      height: '40px', 
-                      border: '4px solid #e0e0e0',
-                      borderTop: '4px solid #007bff',
+                      width: '30px', 
+                      height: '30px', 
+                      border: '3px solid #e0e0e0',
+                      borderTop: '3px solid #007bff',
                       borderRadius: '50%',
                       animation: 'spin 1s linear infinite',
-                      margin: '0 auto 20px'
+                      margin: '0 auto 15px'
                     }} />
-                    <div>Loading tree data...</div>
-                    <div style={{ fontSize: '12px', color: '#666', marginTop: '10px' }}>
+                    <div>Updating tree...</div>
+                    <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
                       {loadingProgress}% complete
                     </div>
                   </div>
-                </div>
-              )}
-              
-              {isTreeLoading && tree && (
-                <div style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  background: 'rgba(255, 255, 255, 0.9)',
-                  padding: '20px',
-                  borderRadius: '8px',
-                  boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-                  zIndex: 1000,
-                  textAlign: 'center'
-                }}>
-                  <div style={{ 
-                    width: '30px', 
-                    height: '30px', 
-                    border: '3px solid #e0e0e0',
-                    borderTop: '3px solid #007bff',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite',
-                    margin: '0 auto 15px'
-                  }} />
-                  <div>Updating tree...</div>
-                  <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-                    {loadingProgress}% complete
-                  </div>
-                </div>
-              )}
-              
-              <TreeViewer 
-                tree={tree}
-                onNodeClick={handleNodeClick}
-              />
-            </div>
-          </>
-        )}
+                )}
+                
+                <TreeViewer 
+                  tree={tree}
+                  onNodeClick={handleNodeClick}
+                />
+              </div>
+            </>
+          } />
+        </Routes>
       </div>
 
       {/* Database Operations Modal */}
@@ -561,12 +633,22 @@ function App() {
         isOpen={isDatabaseModalOpen}
         onClose={() => setIsDatabaseModalOpen(false)}
         onImportSuccess={() => {
-          // Clear cache and reload tree after successful import
+          // Clear cache and reload tree after successful import (only if on tree route)
           clearCache();
-          loadRootTree();
+          if (location.pathname === '/' && activeTab === 'tree') {
+            loadRootTree();
+          }
         }}
       />
     </div>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
   );
 }
 
