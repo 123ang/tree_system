@@ -214,6 +214,18 @@ export class BeeHiveController {
    */
   async getAllMemberStats(req: Request, res: Response) {
     try {
+      const { rootWallet, wallet } = req.query;
+
+      if (typeof wallet === 'string' && wallet.trim()) {
+        const stats = await this.beeHiveService.getMemberStatsForWalletTree(wallet.trim());
+        return res.json(stats);
+      }
+
+      if (typeof rootWallet === 'string' && rootWallet.trim()) {
+        const stats = await this.beeHiveService.getMemberStatsForRoot(rootWallet.trim());
+        return res.json(stats);
+      }
+
       const stats = await this.beeHiveService.getAllMemberStats();
       res.json(stats);
     } catch (error) {
@@ -260,7 +272,23 @@ export class BeeHiveController {
    */
   async getSystemStats(req: Request, res: Response) {
     try {
-      const stats = await this.beeHiveService.getSystemStats();
+      const { rootWallet, wallet } = req.query;
+      const options: { rootWallet?: string; wallet?: string } = {};
+
+      if (typeof wallet === 'string' && wallet.trim()) {
+        options.wallet = wallet.trim();
+      }
+
+      if (typeof rootWallet === 'string' && rootWallet.trim()) {
+        options.rootWallet = rootWallet.trim();
+      }
+
+      const stats = await this.beeHiveService.getSystemStats(options);
+
+      if (!stats) {
+        return res.status(404).json({ error: 'No statistics found for requested scope' });
+      }
+
       res.json(stats);
     } catch (error) {
       console.error('Error getting system stats:', error);

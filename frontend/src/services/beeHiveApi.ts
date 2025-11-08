@@ -19,11 +19,14 @@ export interface BeeHiveLevel {
 
 export interface BeeHiveMemberStats {
   wallet_address: string;
+  root_wallet?: string;
+  referrer_wallet?: string;
   current_level: number;
   total_inflow: number;
   total_outflow_usdt: number;
   total_outflow_bcc: number;
   direct_sponsor_claimed_count: number;
+  direct_sponsor_total_count?: number;
   pending_usdt: number;
   pending_bcc: number;
   earned_usdt: number;
@@ -51,6 +54,10 @@ export interface BeeHiveSystemStats {
   totalOutflowBcc: number;
   totalPendingUsdt: number;
   totalPendingBcc: number;
+  scope?: {
+    type: 'all' | 'root' | 'wallet';
+    value?: string;
+  };
 }
 
 export class BeeHiveApiService {
@@ -76,13 +83,17 @@ export class BeeHiveApiService {
     });
   }
 
-  async getSystemStats(): Promise<BeeHiveSystemStats> {
-    const response = await apiClient.get('/stats');
+  async getSystemStats(params?: { rootWallet?: string; wallet?: string }): Promise<BeeHiveSystemStats> {
+    const response = await apiClient.get('/stats', {
+      params
+    });
     return response.data;
   }
 
-  async getAllMemberStats(): Promise<BeeHiveMemberStats[]> {
-    const response = await apiClient.get('/members');
+  async getAllMemberStats(params?: { rootWallet?: string; wallet?: string }): Promise<BeeHiveMemberStats[]> {
+    const response = await apiClient.get('/members', {
+      params
+    });
     return response.data;
   }
 

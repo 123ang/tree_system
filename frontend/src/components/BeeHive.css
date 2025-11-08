@@ -324,6 +324,223 @@
   text-align: center;
 }
 
+.referrer-cell {
+  color: #6c757d;
+}
+
+.scope-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 15px;
+  align-items: flex-end;
+}
+
+.scope-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  flex: 1 1 220px;
+}
+
+.scope-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.scope-field select,
+.scope-field input {
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.scope-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.scope-btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.scope-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.scope-apply {
+  background: #007bff;
+  color: #fff;
+}
+
+.scope-apply:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.scope-reset {
+  background: #6c757d;
+  color: #fff;
+}
+
+.scope-reset:hover:not(:disabled) {
+  background: #545b62;
+}
+
+.scope-error {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.scope-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: #555;
+}
+
+.scope-badge {
+  background: #e9ecef;
+  color: #495057;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-size: 11px;
+}
+
+.scope-badge.scope-root {
+  background: #fff4e6;
+  color: #d9822b;
+}
+
+.scope-badge.scope-all {
+  background: #e6ffed;
+  color: #1e7e34;
+}
+
+.scope-badge.scope-wallet {
+  background: #e6f4ff;
+  color: #1d6fa5;
+}
+
+.scope-meta {
+  font-weight: 500;
+}
+
+.scope-refresh {
+  color: #007bff;
+  font-weight: 600;
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+  align-items: end;
+}
+
+.filter-input-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.filter-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.filter-meta {
+  background: #f8f9fa;
+  border: 1px dashed #ced4da;
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: center;
+  font-size: 12px;
+  color: #495057;
+}
+
+.filter-meta-label {
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #6c757d;
+}
+
+.filter-meta-value {
+  font-weight: 600;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.summary-card {
+  background: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.summary-label {
+  font-size: 12px;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.summary-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #333;
+}
+
+.summary-value.pending {
+  color: #ffc107;
+}
+
 /* Levels Reference */
 .levels-reference {
   background: white;
@@ -393,6 +610,23 @@
 @media (max-width: 768px) {
   .beehive-container h1 {
     font-size: 2em;
+  }
+
+  .scope-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .scope-actions {
+    justify-content: flex-start;
+  }
+
+  .filters-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   }
 
   .stats-grid {
