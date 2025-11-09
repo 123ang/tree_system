@@ -77,20 +77,17 @@ export class BeeHiveService {
   }
 
   private async resetFullDatabase(): Promise<void> {
-    console.log('Resetting full BeeHive and tree data...');
+    console.log('Resetting full BeeHive data...');
 
-    const tablesInOrder = [
+    const beehiveTables = [
       'beehive_layer_counters',
       'beehive_rewards',
-      'beehive_transactions',
-      'member_closure',
-      'placements',
-      'members'
+      'beehive_transactions'
     ];
 
     await executeQuery('SET FOREIGN_KEY_CHECKS = 0', []);
     try {
-      for (const table of tablesInOrder) {
+      for (const table of beehiveTables) {
         try {
           await executeQuery(`TRUNCATE TABLE ${table}`, []);
           console.log(`Truncated table ${table}`);
@@ -106,6 +103,16 @@ export class BeeHiveService {
     } finally {
       await executeQuery('SET FOREIGN_KEY_CHECKS = 1', []);
     }
+
+    await executeQuery(
+      `UPDATE members
+       SET beehive_current_level = 0,
+           beehive_total_inflow = 0,
+           beehive_total_outflow_usdt = 0,
+           beehive_total_outflow_bcc = 0,
+           beehive_direct_sponsor_claimed_count = 0`,
+      []
+    );
   }
 
   private async getMemberRecordByWallet(wallet: string): Promise<any | null> {
@@ -404,7 +411,7 @@ export class BeeHiveService {
     console.log(`Processing ${transactions.length} BeeHive transactions...`);
     
     try {
-      // Reset entire BeeHive dataset and tree placements
+      // Reset BeeHive dataset while keeping tree structure intact
       await this.resetFullDatabase();
       
       // Sort by payment_datetime
@@ -543,6 +550,7 @@ export class BeeHiveService {
     const newLevel = Math.max(previousLevel, targetLevelNumber);
     if (newLevel > previousLevel) {
       await this.releasePendingDirectSponsorRewards(memberId);
+      await this.releasePendingLayerRewards(memberId, newLevel);
     }
     
     // Award BCC token reward (instant)
@@ -559,7 +567,7 @@ export class BeeHiveService {
     });
     
     // Process direct sponsor reward
-    if (txn.referrer_wallet && txn.referrer_wallet !== txn.wallet_address) {
+    if (targetLevelNumber === 1 && txn.referrer_wallet && txn.referrer_wallet !== txn.wallet_address) {
       await this.processDirectSponsorReward(
         txn.referrer_wallet,
         txn.wallet_address,
@@ -569,36 +577,17 @@ export class BeeHiveService {
     }
     
     // Process layer payout (if level >= 2)
-    if (targetLevelNumber >= 2) {
-      await this.processLayerPayout(
-        txn.wallet_address,
-        memberId,
-        targetLevelNumber,
-        targetLevel.usdt_payout,
-        transactionId,
-        txn.payment_datetime
-      );
-    }
+    await this.processLayerPayout(
+      txn.wallet_address,
+      memberId,
+      targetLevelNumber,
+      targetLevel.usdt_payout,
+      transactionId,
+      txn.payment_datetime
+    );
   }
   
   private async releasePendingDirectSponsorRewards(memberId: number): Promise<void> {
-    const memberResults = await executeQuery(
-      'SELECT beehive_current_level as current_level, beehive_direct_sponsor_claimed_count as claimed FROM members WHERE id = ?',
-      [memberId]
-    );
-    
-    if ((memberResults as any[]).length === 0) {
-      return;
-    }
-    
-    const member = (memberResults as any[])[0];
-    const currentLevel = member.current_level || 0;
-    let claimedCount = member.claimed || 0;
-    
-    if (currentLevel <= 0) {
-      return;
-    }
-    
     const pendingRewards = await executeQuery(
       `SELECT id, amount 
        FROM beehive_rewards 
@@ -616,15 +605,10 @@ export class BeeHiveService {
     const rewardsToRelease: { id: number; amount: number }[] = [];
     
     for (const reward of pendingRewards) {
-      if (currentLevel === 1 && claimedCount >= 2) {
-        break;
-      }
-      
       rewardsToRelease.push({
         id: reward.id,
         amount: Number(reward.amount) || 0
       });
-      claimedCount += 1;
     }
     
     if (rewardsToRelease.length === 0) {
@@ -650,9 +634,71 @@ export class BeeHiveService {
     const totalReleasedAmount = rewardsToRelease.reduce((sum, reward) => sum + reward.amount, 0);
     
     await executeQuery(
-      'UPDATE members SET beehive_direct_sponsor_claimed_count = beehive_direct_sponsor_claimed_count + ?, beehive_total_outflow_usdt = beehive_total_outflow_usdt + ? WHERE id = ?',
-      [rewardsToRelease.length, totalReleasedAmount, memberId]
+      'UPDATE members SET beehive_total_outflow_usdt = beehive_total_outflow_usdt + ? WHERE id = ?',
+      [totalReleasedAmount, memberId]
     );
+  }
+
+  private async releasePendingLayerRewards(memberId: number, newLevel: number): Promise<void> {
+    const pendingRewards = await executeQuery(
+      `SELECT id, amount, layer_number, layer_upgrade_sequence, pending_expires_at
+       FROM beehive_rewards
+       WHERE recipient_member_id = ?
+         AND reward_type = 'layer_payout'
+         AND status = 'pending'`,
+      [memberId]
+    ) as any[];
+
+    if (pendingRewards.length === 0) {
+      return;
+    }
+
+    const applicableRewards: { id: number; amount: number }[] = [];
+
+    for (const reward of pendingRewards) {
+      const layerNumber = reward.layer_number || 0;
+      if (layerNumber === 0) {
+        continue;
+      }
+
+      if (newLevel < layerNumber) {
+        continue;
+      }
+
+      applicableRewards.push({
+        id: reward.id,
+        amount: Number(reward.amount) || 0
+      });
+    }
+
+    if (applicableRewards.length === 0) {
+      return;
+    }
+
+    const noteSuffix = ' (released after upgrade)';
+
+    for (const reward of applicableRewards) {
+      await executeQuery(
+        `UPDATE beehive_rewards
+         SET status = 'instant',
+             pending_expires_at = NULL,
+             notes = CASE
+               WHEN notes LIKE ? THEN notes
+               ELSE CONCAT(COALESCE(notes, ''), ?)
+             END
+         WHERE id = ?`,
+        [`%${noteSuffix.trim()}%`, noteSuffix, reward.id]
+      );
+    }
+
+    const totalReleasedAmount = applicableRewards.reduce((sum, reward) => sum + reward.amount, 0);
+
+    if (totalReleasedAmount > 0) {
+      await executeQuery(
+        'UPDATE members SET beehive_total_outflow_usdt = beehive_total_outflow_usdt + ? WHERE id = ?',
+        [totalReleasedAmount, memberId]
+      );
+    }
   }
 
   /**
@@ -739,7 +785,10 @@ export class BeeHiveService {
     transactionId: number,
     paymentDatetime: string
   ): Promise<void> {
-    // Find upline at the corresponding layer (layer N = N levels up in placement tree)
+    if (level < 2) {
+      return;
+    }
+
     const layerDepth = level;
     const upline = await this.findUplineAtLayer(memberId, layerDepth);
     
@@ -761,85 +810,47 @@ export class BeeHiveService {
     // Check upline qualification
     const uplineLevel = upline.current_level;
     
-    if (upgradeSequence <= 2) {
-      // 1st and 2nd: instant if qualified
-      if (uplineLevel >= level) {
-        await this.createReward({
-          recipient_member_id: upline.member_id,
-          recipient_wallet: upline.wallet_address,
-          source_transaction_id: transactionId,
-          source_wallet: memberWallet,
-          reward_type: 'layer_payout',
-          amount: payout,
-          currency: 'USDT',
-          status: 'instant',
-          layer_number: level,
-          layer_upgrade_sequence: upgradeSequence,
-          notes: `Layer ${level} payout #${upgradeSequence} - instant`
-        });
-        
-        await executeQuery(
-          'UPDATE members SET beehive_total_outflow_usdt = beehive_total_outflow_usdt + ? WHERE id = ?',
-          [payout, upline.member_id]
-        );
-      } else {
-        // Not qualified yet
-        const expiresAt = new Date(new Date(paymentDatetime).getTime() + 72 * 60 * 60 * 1000);
-        await this.createReward({
-          recipient_member_id: upline.member_id,
-          recipient_wallet: upline.wallet_address,
-          source_transaction_id: transactionId,
-          source_wallet: memberWallet,
-          reward_type: 'layer_payout',
-          amount: payout,
-          currency: 'USDT',
-          status: 'pending',
-          layer_number: level,
-          layer_upgrade_sequence: upgradeSequence,
-          pending_expires_at: expiresAt,
-          notes: `Layer ${level} payout #${upgradeSequence} - pending (need level ${level}, current: ${uplineLevel})`
-        });
-      }
+    if (uplineLevel >= level) {
+      await this.createReward({
+        recipient_member_id: upline.member_id,
+        recipient_wallet: upline.wallet_address,
+        source_transaction_id: transactionId,
+        source_wallet: memberWallet,
+        reward_type: 'layer_payout',
+        amount: payout,
+        currency: 'USDT',
+        status: 'instant',
+        layer_number: level,
+        layer_upgrade_sequence: upgradeSequence,
+        notes: `Layer ${level} payout #${upgradeSequence} - instant`
+      });
+      
+      await executeQuery(
+        'UPDATE members SET beehive_direct_sponsor_claimed_count = beehive_direct_sponsor_claimed_count + 1 WHERE id = ?',
+        [upline.member_id]
+      );
+      
+      await executeQuery(
+        'UPDATE members SET beehive_total_outflow_usdt = beehive_total_outflow_usdt + ? WHERE id = ?',
+        [payout, upline.member_id]
+      );
     } else {
-      // 3rd: must upgrade to next level
-      const requiredLevel = level + 1;
-      if (uplineLevel >= requiredLevel) {
-        await this.createReward({
-          recipient_member_id: upline.member_id,
-          recipient_wallet: upline.wallet_address,
-          source_transaction_id: transactionId,
-          source_wallet: memberWallet,
-          reward_type: 'layer_payout',
-          amount: payout,
-          currency: 'USDT',
-          status: 'instant',
-          layer_number: level,
-          layer_upgrade_sequence: upgradeSequence,
-          notes: `Layer ${level} payout #${upgradeSequence} - instant (qualified for level ${requiredLevel})`
-        });
-        
-        await executeQuery(
-          'UPDATE members SET beehive_total_outflow_usdt = beehive_total_outflow_usdt + ? WHERE id = ?',
-          [payout, upline.member_id]
-        );
-      } else {
-        // Pending - will pass up after 72h
-        const expiresAt = new Date(new Date(paymentDatetime).getTime() + 72 * 60 * 60 * 1000);
-        await this.createReward({
-          recipient_member_id: upline.member_id,
-          recipient_wallet: upline.wallet_address,
-          source_transaction_id: transactionId,
-          source_wallet: memberWallet,
-          reward_type: 'layer_payout',
-          amount: payout,
-          currency: 'USDT',
-          status: 'pending',
-          layer_number: level,
-          layer_upgrade_sequence: upgradeSequence,
-          pending_expires_at: expiresAt,
-          notes: `Layer ${level} payout #${upgradeSequence} - pending (need level ${requiredLevel}, current: ${uplineLevel}) - will pass up if not qualified`
-        });
-      }
+      // Not qualified yet
+      const expiresAt = new Date(new Date(paymentDatetime).getTime() + 72 * 60 * 60 * 1000);
+      await this.createReward({
+        recipient_member_id: upline.member_id,
+        recipient_wallet: upline.wallet_address,
+        source_transaction_id: transactionId,
+        source_wallet: memberWallet,
+        reward_type: 'layer_payout',
+        amount: payout,
+        currency: 'USDT',
+        status: 'pending',
+        layer_number: level,
+        layer_upgrade_sequence: upgradeSequence,
+        pending_expires_at: expiresAt,
+        notes: `Layer ${level} payout #${upgradeSequence} - pending (need level ${level}, current: ${uplineLevel})`
+      });
     }
   }
   
@@ -1149,8 +1160,8 @@ export class BeeHiveService {
         m.beehive_total_inflow as total_inflow,
         m.beehive_total_outflow_usdt as total_outflow_usdt,
         m.beehive_total_outflow_bcc as total_outflow_bcc,
-        m.beehive_direct_sponsor_claimed_count as direct_sponsor_claimed_count,
-        (SELECT COUNT(*) FROM members child WHERE child.sponsor_id = m.id) AS direct_sponsor_total_count,
+        (SELECT COUNT(*) FROM beehive_rewards br WHERE br.recipient_wallet = m.wallet_address AND br.reward_type = 'direct_sponsor' AND br.status = 'instant') AS direct_sponsor_claimed_count,
+        (SELECT COUNT(*) FROM beehive_rewards br WHERE br.recipient_wallet = m.wallet_address AND br.reward_type = 'direct_sponsor') AS direct_sponsor_total_count,
         (SELECT SUM(amount) FROM beehive_rewards WHERE recipient_wallet = m.wallet_address AND currency = 'USDT' AND status = 'pending') as pending_usdt,
         (SELECT SUM(amount) FROM beehive_rewards WHERE recipient_wallet = m.wallet_address AND currency = 'BCC' AND status = 'pending') as pending_bcc,
         (SELECT SUM(amount) FROM beehive_rewards WHERE recipient_wallet = m.wallet_address AND currency = 'USDT' AND status = 'instant') as earned_usdt,
@@ -1197,8 +1208,8 @@ export class BeeHiveService {
         m.beehive_total_inflow as total_inflow,
         m.beehive_total_outflow_usdt as total_outflow_usdt,
         m.beehive_total_outflow_bcc as total_outflow_bcc,
-        m.beehive_direct_sponsor_claimed_count as direct_sponsor_claimed_count,
-        (SELECT COUNT(*) FROM members child WHERE child.sponsor_id = m.id) AS direct_sponsor_total_count,
+        (SELECT COUNT(*) FROM beehive_rewards br WHERE br.recipient_wallet = m.wallet_address AND br.reward_type = 'direct_sponsor' AND br.status = 'instant') AS direct_sponsor_claimed_count,
+        (SELECT COUNT(*) FROM beehive_rewards br WHERE br.recipient_wallet = m.wallet_address AND br.reward_type = 'direct_sponsor') AS direct_sponsor_total_count,
         (SELECT SUM(amount) FROM beehive_rewards WHERE recipient_wallet = m.wallet_address AND currency = 'USDT' AND status = 'pending') as pending_usdt,
         (SELECT SUM(amount) FROM beehive_rewards WHERE recipient_wallet = m.wallet_address AND currency = 'BCC' AND status = 'pending') as pending_bcc,
         (SELECT SUM(amount) FROM beehive_rewards WHERE recipient_wallet = m.wallet_address AND currency = 'USDT' AND status = 'instant') as earned_usdt,
@@ -1226,8 +1237,8 @@ export class BeeHiveService {
         m.beehive_total_inflow as total_inflow,
         m.beehive_total_outflow_usdt as total_outflow_usdt,
         m.beehive_total_outflow_bcc as total_outflow_bcc,
-        m.beehive_direct_sponsor_claimed_count as direct_sponsor_claimed_count,
-        (SELECT COUNT(*) FROM members child WHERE child.sponsor_id = m.id) AS direct_sponsor_total_count,
+        (SELECT COUNT(*) FROM beehive_rewards br WHERE br.recipient_wallet = m.wallet_address AND br.reward_type = 'direct_sponsor' AND br.status = 'instant') AS direct_sponsor_claimed_count,
+        (SELECT COUNT(*) FROM beehive_rewards br WHERE br.recipient_wallet = m.wallet_address AND br.reward_type = 'direct_sponsor') AS direct_sponsor_total_count,
         (SELECT SUM(amount) FROM beehive_rewards WHERE recipient_wallet = m.wallet_address AND currency = 'USDT' AND status = 'pending') as pending_usdt,
         (SELECT SUM(amount) FROM beehive_rewards WHERE recipient_wallet = m.wallet_address AND currency = 'BCC' AND status = 'pending') as pending_bcc,
         (SELECT SUM(amount) FROM beehive_rewards WHERE recipient_wallet = m.wallet_address AND currency = 'USDT' AND status = 'instant') as earned_usdt,
