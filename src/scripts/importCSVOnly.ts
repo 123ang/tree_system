@@ -487,11 +487,13 @@ export class TreeImporterOnly {
         params: [memberId, parentId]
       },
       {
+        // Use JOIN to avoid MySQL error: can't update table while selecting from it
         query: `
-          UPDATE members 
-          SET root_id = (SELECT root_id FROM members WHERE id = ?),
-              sponsor_id = ?
-          WHERE id = ?
+          UPDATE members m
+          JOIN (SELECT root_id FROM members WHERE id = ?) AS p
+          SET m.root_id = p.root_id,
+              m.sponsor_id = ?
+          WHERE m.id = ?
         `,
         params: [parentId, sponsorId, memberId]
       }
