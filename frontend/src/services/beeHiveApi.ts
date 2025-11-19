@@ -1,6 +1,7 @@
 import axios from 'axios';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
-const API_BASE_URL = 'http://localhost:3000/api/beehive';
+const API_BASE_URL = `${getApiBaseUrl()}/beehive`;
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -68,7 +69,10 @@ export class BeeHiveApiService {
 
   async setupDatabase(): Promise<any> {
     // This returns a stream, handle in component
-    return fetch('http://localhost:3000/api/beehive/setup', {
+    const apiBaseUrl = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ? 'http://localhost:3000/api/beehive'
+      : '/api/beehive';
+    return fetch(`${apiBaseUrl}/setup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
@@ -76,7 +80,10 @@ export class BeeHiveApiService {
 
   async processCSV(csvFile: string): Promise<any> {
     // This returns a stream, handle in component
-    return fetch('http://localhost:3000/api/beehive/process', {
+    const apiBaseUrl = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ? 'http://localhost:3000/api/beehive'
+      : '/api/beehive';
+    return fetch(`${apiBaseUrl}/process`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ csvFile })

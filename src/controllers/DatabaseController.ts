@@ -6,7 +6,7 @@ import fs from 'fs';
 
 // Configure multer for CSV file uploads
 const storage = multer.diskStorage({
-  destination: (_req: any, _file: any, cb: any) => {
+  destination: (req: any, _file: any, cb: any) => {
     const projectRoot = path.join(__dirname, '..', '..');
     const csvFolder = path.join(projectRoot, 'csv');
     
@@ -17,9 +17,17 @@ const storage = multer.diskStorage({
     
     cb(null, csvFolder);
   },
-  filename: (_req: any, file: any, cb: any) => {
+  filename: (req: any, file: any, cb: any) => {
     // Keep original filename, sanitize it
     const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    
+    // Check if file already exists (before multer overwrites it)
+    const projectRoot = path.join(__dirname, '..', '..');
+    const csvFolder = path.join(projectRoot, 'csv');
+    const fullPath = path.join(csvFolder, sanitized);
+    req.fileExisted = fs.existsSync(fullPath);
+    
+    // Multer will automatically overwrite existing files with the same name
     cb(null, sanitized);
   }
 });
@@ -228,6 +236,7 @@ export class DatabaseController {
 
   /**
    * Upload CSV file
+   * Note: Multer automatically overwrites files with the same name
    */
   async uploadCSV(req: any, res: Response) {
     try {
@@ -237,12 +246,31 @@ export class DatabaseController {
 
       const fileName = req.file.filename;
       const filePath = req.file.path;
+      
+      // Check if file existed before upload (stored in req by multer middleware)
+      // Since multer overwrites by default, we check if it existed before
+      const projectRoot = path.join(__dirname, '..', '..');
+      const csvFolder = path.join(projectRoot, 'csv');
+      const fullPath = path.join(csvFolder, fileName);
+      
+      // Note: At this point, multer has already written the file
+      // So we check the file stats to see if it was just created or replaced
+      // Actually, multer always overwrites, so we can't tell the difference
+      // Just confirm the upload was successful
+      
+      // Verify file was written successfully
+      if (!fs.existsSync(fullPath)) {
+        return res.status(500).json({ error: 'File upload failed - file not found after upload' });
+      }
 
       res.json({
         success: true,
-        message: 'File uploaded successfully',
+        message: req.fileExisted 
+          ? `File "${fileName}" replaced successfully` 
+          : `File "${fileName}" uploaded successfully`,
         fileName: fileName,
-        path: filePath
+        path: filePath,
+        replaced: req.fileExisted || false
       });
     } catch (error: any) {
       console.error('Error uploading CSV file:', error);

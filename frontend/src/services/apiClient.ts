@@ -25,7 +25,9 @@ export interface MemberLayerInfo {
   isRoot: boolean;
 }
 
-const API_BASE_URL = 'http://localhost:3000/api';
+import { getApiBaseUrl } from '../utils/apiConfig';
+
+const API_BASE_URL = getApiBaseUrl();
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,

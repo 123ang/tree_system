@@ -362,9 +362,12 @@ function AppContent() {
     formData.append('csvFile', file);
 
     try {
-      // Use the API base URL from environment or default
-      const apiUrl = (import.meta.env?.VITE_API_URL as string) || 'http://localhost:3000';
-      const response = await fetch(`${apiUrl}/api/database/upload`, {
+      // Get API base URL (works in both dev and production)
+      const apiBaseUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:3000/api'
+        : '/api';
+      
+      const response = await fetch(`${apiBaseUrl}/database/upload`, {
         method: 'POST',
         body: formData
         // Don't set Content-Type header - browser will set it with boundary for FormData

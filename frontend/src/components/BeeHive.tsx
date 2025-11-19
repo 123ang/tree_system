@@ -264,7 +264,10 @@ export const BeeHive: React.FC = () => {
 
   const loadCSVFiles = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/database/csv-files');
+      const apiBaseUrl = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? 'http://localhost:3000/api'
+        : '/api';
+      const response = await fetch(`${apiBaseUrl}/database/csv-files`);
       if (!response.ok) {
         // If endpoint doesn't exist or fails, that's okay - we'll just show empty file list
         return;

@@ -27,7 +27,10 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, o
 
   const loadCSVFiles = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/database/csv-files');
+      const apiBaseUrl = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? 'http://localhost:3000/api'
+        : '/api';
+      const response = await fetch(`${apiBaseUrl}/database/csv-files`);
       const data = await response.json();
       setCsvFiles(data.files.map((f: any) => f.name));
     } catch (error) {
@@ -53,9 +56,12 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, o
     try {
       const controller = new AbortController();
       const { signal } = controller;
+      const apiBaseUrl = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? 'http://localhost:3000/api'
+        : '/api';
       const endpoint = type === 'setup' 
-        ? 'http://localhost:3000/api/database/setup'
-        : 'http://localhost:3000/api/database/import';
+        ? `${apiBaseUrl}/database/setup`
+        : `${apiBaseUrl}/database/import`;
 
       const response = await fetch(endpoint, {
         method: 'POST',
