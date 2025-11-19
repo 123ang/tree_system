@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import TreeViewer from './components/TreeViewer';
 import SearchBar from './components/SearchBar';
@@ -30,6 +30,9 @@ function AppContent() {
   const [maxDepth, setMaxDepth] = useState(3);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [isDatabaseModalOpen, setIsDatabaseModalOpen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   
   // Cache for tree data
   const [treeCache, setTreeCache] = useState<Map<string, { tree: TreeStructure; stats: SubtreeStats; timestamp: number }>>(new Map());
@@ -331,6 +334,49 @@ function AppContent() {
     }
   };
 
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.name.endsWith('.csv')) {
+      setUploadMessage('❌ Please select a CSV file');
+      setTimeout(() => setUploadMessage(''), 3000);
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadMessage('📤 Uploading file...');
+
+    const formData = new FormData();
+    formData.append('csvFile', file);
+
+    try {
+      const response = await fetch('http://localhost:3000/api/database/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setUploadMessage(`✅ File "${data.fileName}" uploaded successfully!`);
+        // Clear file input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      } else {
+        setUploadMessage(`❌ Upload failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (error: any) {
+      setUploadMessage(`❌ Upload error: ${error.message}`);
+    } finally {
+      setIsUploading(false);
+      // Clear message after 5 seconds
+      setTimeout(() => setUploadMessage(''), 5000);
+    }
+  };
+
   const handleLoadAllLevels = async () => {
     if (!selectedMember) return;
     
@@ -536,22 +582,61 @@ function AppContent() {
                   Load Root Tree
                 </button>
                 
-                <button 
-                  className="btn btn-secondary" 
-                  onClick={() => setIsDatabaseModalOpen(true)}
-                  style={{ 
-                    marginLeft: '10px',
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    color: 'white',
-                    border: 'none',
-                    padding: '8px 16px',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontWeight: 600
-                  }}
-                >
-                  🔧 Database Operations
-                </button>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <label
+                    htmlFor="csv-upload-input"
+                    style={{
+                      display: 'inline-block',
+                      background: 'linear-gradient(135deg, #28a745 0%, #20c997 100%)',
+                      color: 'white',
+                      border: 'none',
+                      padding: '8px 16px',
+                      borderRadius: '4px',
+                      cursor: isUploading ? 'not-allowed' : 'pointer',
+                      fontWeight: 600,
+                      opacity: isUploading ? 0.7 : 1,
+                      pointerEvents: isUploading ? 'none' : 'auto'
+                    }}
+                  >
+                    {isUploading ? '📤 Uploading...' : '📤 Upload CSV'}
+                  </label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    id="csv-upload-input"
+                    accept=".csv"
+                    onChange={handleFileUpload}
+                    disabled={isUploading}
+                    style={{ display: 'none' }}
+                  />
+                  {uploadMessage && (
+                    <span style={{
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      backgroundColor: uploadMessage.includes('✅') ? '#d4edda' : '#f8d7da',
+                      color: uploadMessage.includes('✅') ? '#155724' : '#721c24'
+                    }}>
+                      {uploadMessage}
+                    </span>
+                  )}
+                  
+                  <button 
+                    className="btn btn-secondary" 
+                    onClick={() => setIsDatabaseModalOpen(true)}
+                    style={{ 
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      color: 'white',
+                      border: 'none',
+                      padding: '8px 16px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: 600
+                    }}
+                  >
+                    🔧 Database Operations
+                  </button>
+                </div>
                 
                 {tree && (
                   <div style={{ marginLeft: 'auto', color: '#666' }}>
@@ -629,7 +714,11 @@ function AppContent() {
       {/* Database Operations Modal */}
       <DatabaseModal 
         isOpen={isDatabaseModalOpen}
-        onClose={() => setIsDatabaseModalOpen(false)}
+        onClose={() => {
+          setIsDatabaseModalOpen(false);
+          // Reload CSV files when modal closes (in case new file was uploaded)
+          // This is handled by the modal's useEffect when it opens
+        }}
         onImportSuccess={() => {
           // Clear cache and reload tree after successful import (only if on tree route)
           clearCache();

@@ -17,9 +17,6 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, o
   const [selectedFile, setSelectedFile] = useState<string>('sponsor tree.csv');
   const [isLoading, setIsLoading] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadMessage, setUploadMessage] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const logsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -36,52 +33,6 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, o
     } catch (error) {
       console.error('Error loading CSV files:', error);
       setCsvFiles(['sponsor tree.csv', 'members.csv']);
-    }
-  };
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.name.endsWith('.csv')) {
-      setUploadMessage('❌ Please select a CSV file');
-      return;
-    }
-
-    setIsUploading(true);
-    setUploadMessage('📤 Uploading file...');
-
-    const formData = new FormData();
-    formData.append('csvFile', file);
-
-    try {
-      const response = await fetch('http://localhost:3000/api/database/upload', {
-        method: 'POST',
-        body: formData
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        setUploadMessage(`✅ File "${data.fileName}" uploaded successfully!`);
-        // Reload CSV files list
-        await loadCSVFiles();
-        // Select the newly uploaded file
-        setSelectedFile(data.fileName);
-        // Clear file input
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-      } else {
-        setUploadMessage(`❌ Upload failed: ${data.error || 'Unknown error'}`);
-      }
-    } catch (error: any) {
-      setUploadMessage(`❌ Upload error: ${error.message}`);
-    } finally {
-      setIsUploading(false);
-      // Clear message after 5 seconds
-      setTimeout(() => setUploadMessage(''), 5000);
     }
   };
 
@@ -264,35 +215,6 @@ export const DatabaseModal: React.FC<DatabaseModalProps> = ({ isOpen, onClose, o
         </div>
 
         <div className="modal-body">
-          <div className="file-upload-section" style={{ marginBottom: '20px', padding: '15px', border: '1px solid #ddd', borderRadius: '4px', backgroundColor: '#f9f9f9' }}>
-            <label htmlFor="csv-upload" style={{ display: 'block', marginBottom: '10px', fontWeight: 'bold' }}>
-              📤 Upload CSV File:
-            </label>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <input
-                ref={fileInputRef}
-                type="file"
-                id="csv-upload"
-                accept=".csv"
-                onChange={handleFileUpload}
-                disabled={isUploading || showLoading}
-                style={{ flex: 1, padding: '8px' }}
-              />
-              {isUploading && <span style={{ color: '#007bff' }}>Uploading...</span>}
-            </div>
-            {uploadMessage && (
-              <div style={{ 
-                marginTop: '10px', 
-                padding: '8px', 
-                borderRadius: '4px',
-                backgroundColor: uploadMessage.includes('✅') ? '#d4edda' : '#f8d7da',
-                color: uploadMessage.includes('✅') ? '#155724' : '#721c24'
-              }}>
-                {uploadMessage}
-              </div>
-            )}
-          </div>
-
           <div className="file-selection">
             <label htmlFor="csv-file">Select CSV File:</label>
             <select
