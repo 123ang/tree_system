@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { TreeController } from './controllers/TreeController';
 import { MemberController } from './controllers/MemberController';
-import { DatabaseController } from './controllers/DatabaseController';
+import { DatabaseController, uploadCSV } from './controllers/DatabaseController';
 import { BeeHiveController } from './controllers/BeeHiveController';
 
 dotenv.config();
@@ -103,6 +103,7 @@ app.delete('/api/members/:id', (req, res) => memberController.deleteMember(req, 
 // Database operation routes
 app.post('/api/database/setup', (req, res) => databaseController.setupDatabase(req, res));
 app.post('/api/database/import', (req, res) => databaseController.importCSV(req, res));
+app.post('/api/database/upload', uploadCSV, (req, res) => databaseController.uploadCSV(req, res));
 app.get('/api/database/csv-files', (req, res) => databaseController.listCSVFiles(req, res));
 
 // BeeHive routes

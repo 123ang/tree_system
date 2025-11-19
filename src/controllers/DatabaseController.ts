@@ -1,6 +1,45 @@
 import { Request, Response } from 'express';
 import { spawn } from 'child_process';
 import path from 'path';
+import multer from 'multer';
+import fs from 'fs';
+
+// Configure multer for CSV file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const projectRoot = path.join(__dirname, '..', '..');
+    const csvFolder = path.join(projectRoot, 'csv');
+    
+    // Create csv folder if it doesn't exist
+    if (!fs.existsSync(csvFolder)) {
+      fs.mkdirSync(csvFolder, { recursive: true });
+    }
+    
+    cb(null, csvFolder);
+  },
+  filename: (req, file, cb) => {
+    // Keep original filename, sanitize it
+    const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, sanitized);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Only accept CSV files
+    if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV files are allowed'));
+    }
+  }
+});
+
+export const uploadCSV = upload.single('csvFile');
 
 export class DatabaseController {
   /**
@@ -183,6 +222,30 @@ export class DatabaseController {
 
     } catch (error: any) {
       console.error('Error in importCSV:', error);
+      res.status(500).json({ error: error.message || 'Internal server error' });
+    }
+  }
+
+  /**
+   * Upload CSV file
+   */
+  async uploadCSV(req: Request, res: Response) {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      const fileName = req.file.filename;
+      const filePath = req.file.path;
+
+      res.json({
+        success: true,
+        message: 'File uploaded successfully',
+        fileName: fileName,
+        path: filePath
+      });
+    } catch (error: any) {
+      console.error('Error uploading CSV file:', error);
       res.status(500).json({ error: error.message || 'Internal server error' });
     }
   }
