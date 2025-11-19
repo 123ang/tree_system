@@ -41,8 +41,9 @@ export class BeeHiveController {
 
       res.write(JSON.stringify({ status: 'started', message: 'Starting BeeHive database setup...\n' }) + '\n');
 
-      const scriptPath = path.join(__dirname, '..', 'scripts', 'setupBeeHive.ts');
       const projectRoot = path.join(__dirname, '..', '..');
+      // Point to source TypeScript file, not compiled dist file
+      const scriptPath = path.join(projectRoot, 'src', 'scripts', 'setupBeeHive.ts');
       
       const command = `npx ts-node "${scriptPath}"`;
       

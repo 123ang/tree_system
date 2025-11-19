@@ -68,9 +68,10 @@ export class DatabaseController {
       // Send initial response
       res.write(JSON.stringify({ status: 'started', message: 'Starting database setup...\n' }) + '\n');
 
-      const scriptPath = path.join(__dirname, '..', 'scripts', 'setupDatabase.ts');
       // Use full path to CSV file to avoid issues with spaces in filename
       const projectRoot = path.join(__dirname, '..', '..');
+      // Point to source TypeScript file, not compiled dist file
+      const scriptPath = path.join(projectRoot, 'src', 'scripts', 'setupDatabase.ts');
       const csvFolder = path.join(projectRoot, 'csv');
       const fs = require('fs');
       
@@ -158,9 +159,10 @@ export class DatabaseController {
       // Send initial response
       res.write(JSON.stringify({ status: 'started', message: 'Starting CSV import...\n' }) + '\n');
 
-      const scriptPath = path.join(__dirname, '..', 'scripts', 'importCSVOnly.ts');
       // Use full path to CSV file to avoid issues with spaces in filename
       const projectRoot = path.join(__dirname, '..', '..');
+      // Point to source TypeScript file, not compiled dist file
+      const scriptPath = path.join(projectRoot, 'src', 'scripts', 'importCSVOnly.ts');
       const csvFolder = path.join(projectRoot, 'csv');
       const fs = require('fs');
       

@@ -905,15 +905,125 @@ cat .env | grep DB_
 
 ### 12.6 SSL Certificate Issues
 
+**Symptoms:** HTTP works but HTTPS doesn't work
+
+**Step 1: Check if Nginx is listening on port 443**
 ```bash
-# Check certificate status
+# Check if port 443 is open and listening
+sudo ss -tulpn | grep :443
+
+# Should show nginx listening on *:443 or 0.0.0.0:443
+# If nothing shows, SSL is not configured
+```
+
+**Step 2: Check certificate status**
+```bash
+# List all certificates
 sudo certbot certificates
 
-# Renew certificate manually
-sudo certbot renew
+# Should show certificates for your domains
+```
 
-# Check Nginx SSL configuration
+**Step 3: Check Nginx configuration**
+```bash
+# View the Nginx config for your site
+sudo cat /etc/nginx/sites-available/infi-tools
+
+# Should have a server block with:
+# listen 443 ssl;
+# ssl_certificate /etc/letsencrypt/live/infi-tools.com/fullchain.pem;
+# ssl_certificate_key /etc/letsencrypt/live/infi-tools.com/privkey.pem;
+```
+
+**Step 4: Verify certificate files exist**
+```bash
+# Check if certificate files exist
+sudo ls -la /etc/letsencrypt/live/infi-tools.com/
+
+# Should show:
+# - fullchain.pem
+# - privkey.pem
+# - cert.pem
+# - chain.pem
+```
+
+**Step 5: Check firewall for port 443**
+```bash
+# Check if port 443 is allowed
+sudo ufw status verbose
+
+# If not, allow it:
+sudo ufw allow 443/tcp
+sudo ufw reload
+```
+
+**Step 6: Test Nginx configuration**
+```bash
+# Test Nginx config for errors
 sudo nginx -t
+
+# If there are errors, fix them
+# Common issues:
+# - Missing SSL certificate paths
+# - Syntax errors in server block
+```
+
+**Step 7: Re-run certbot if needed**
+```bash
+# If certificate exists but Nginx isn't configured:
+sudo certbot --nginx -d infi-tools.com -d www.infi-tools.com
+
+# This will reconfigure Nginx with SSL
+```
+
+**Step 8: Check Nginx error logs**
+```bash
+# Check for SSL-related errors
+sudo tail -50 /var/log/nginx/error.log | grep -i ssl
+
+# Common errors:
+# - "SSL_CTX_use_certificate_file" - certificate file path wrong
+# - "could not build server_names_hash" - server_name issue
+```
+
+**Step 9: Verify SSL certificate is valid**
+```bash
+# Test SSL connection
+openssl s_client -connect infi-tools.com:443 -servername infi-tools.com
+
+# Should show certificate details
+```
+
+**Step 10: Common Fix - Reconfigure SSL**
+```bash
+# If certbot didn't configure Nginx properly, manually check:
+sudo nano /etc/nginx/sites-available/infi-tools
+
+# Make sure you have BOTH server blocks:
+# 1. HTTP server (port 80) that redirects to HTTPS
+# 2. HTTPS server (port 443) with SSL certificates
+
+# After editing, test and reload:
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+**Quick Diagnostic Commands:**
+```bash
+# 1. Check port 443
+sudo ss -tulpn | grep :443
+
+# 2. Check certificates
+sudo certbot certificates
+
+# 3. Check Nginx config
+sudo nginx -t
+
+# 4. Check firewall
+sudo ufw status | grep 443
+
+# 5. Test HTTPS
+curl -I https://infi-tools.com
 ```
 
 ### 12.7 Permission Issues
