@@ -13,15 +13,16 @@ This guide will help you deploy the Direct Sales Tree Visualization application 
 1. [Initial Server Setup](#1-initial-server-setup)
 2. [Install Required Software](#2-install-required-software)
 3. [Configure MySQL Database](#3-configure-mysql-database)
-4. [Deploy Application](#4-deploy-application)
-5. [Build and Configure Application](#5-build-and-configure-application)
-6. [Setup Process Manager (PM2)](#6-setup-process-manager-pm2)
-7. [Configure Nginx Reverse Proxy](#7-configure-nginx-reverse-proxy)
-8. [Setup SSL Certificate](#8-setup-ssl-certificate)
-9. [Configure Domain DNS](#9-configure-domain-dns)
-10. [Testing and Verification](#10-testing-and-verification)
-11. [Maintenance Commands](#11-maintenance-commands)
-12. [Troubleshooting](#12-troubleshooting)
+4. [Install phpMyAdmin (Optional)](#4-install-phpmyadmin-optional)
+5. [Deploy Application](#5-deploy-application)
+6. [Build and Configure Application](#6-build-and-configure-application)
+7. [Setup Process Manager (PM2)](#7-setup-process-manager-pm2)
+8. [Configure Nginx Reverse Proxy](#8-configure-nginx-reverse-proxy)
+9. [Setup SSL Certificate](#9-setup-ssl-certificate)
+10. [Configure Domain DNS](#10-configure-domain-dns)
+11. [Testing and Verification](#11-testing-and-verification)
+12. [Maintenance Commands](#12-maintenance-commands)
+13. [Troubleshooting](#13-troubleshooting)
 
 ---
 
@@ -172,9 +173,896 @@ mysql -u tree_app -p direct_sales_tree
 
 ---
 
-## 4. Deploy Application
+## 4. Install phpMyAdmin (Optional)
 
-### 4.1 Clone Repository
+phpMyAdmin is a web-based tool for managing MySQL databases. This section will guide you through installing and securing it.
+
+### 4.1 Install PHP and Required Extensions
+
+phpMyAdmin requires PHP. Install PHP and necessary extensions:
+
+```bash
+# Update package list
+sudo apt update
+
+# Install PHP and required extensions
+sudo apt install php-fpm php-mysql php-mbstring php-xml php-curl php-zip php-gd -y
+
+# Verify PHP installation
+php -v
+```
+
+### 4.2 Install phpMyAdmin
+
+```bash
+# Install phpMyAdmin
+sudo apt install phpmyadmin
+```
+
+**Note:** Don't use `-y` flag so you can interact with the installation prompts.
+
+During installation, you'll be prompted with several configuration screens:
+
+#### Prompt 1: Web Server Selection
+
+```
+┌─────────────────────────────────────┐
+│ Configuring phpmyadmin              │
+├─────────────────────────────────────┘
+│                                     │
+│ Please choose the web server that   │
+│ should be automatically configured  │
+│ to run phpMyAdmin.                  │
+│                                     │
+│ Web server to reconfigure           │
+│ automatically:                      │
+│                                     │
+│    [ ] apache2                      │
+│    [*] nginx                        │
+│                                     │
+│            <Ok>                     │
+└─────────────────────────────────────┘
+```
+
+**What to do:**
+- Use **Arrow keys** to navigate
+- Press **Space** to select/deselect
+- **Select `nginx`** (if available) or leave it unselected
+- Press **Tab** to move to `<Ok>`, then press **Enter**
+
+**Note:** If nginx is not listed or you can't select it, that's fine. Just press Enter to continue. We'll configure Nginx manually in the next step.
+
+#### Prompt 2: Configure Database with dbconfig-common
+
+```
+┌─────────────────────────────────────┐
+│ Configuring phpmyadmin              │
+├─────────────────────────────────────┘
+│                                     │
+│ The phpMyAdmin application needs a  │
+│ database to store its configuration  │
+│ data.                               │
+│                                     │
+│ Configure database for phpmyadmin   │
+│ with dbconfig-common?               │
+│                                     │
+│            <Yes>      <No>          │
+└─────────────────────────────────────┘
+```
+
+**What to choose: `Yes` (Recommended)**
+
+**Why choose Yes:**
+- ✅ Creates a dedicated database (`phpmyadmin`) for phpMyAdmin's internal configuration
+- ✅ Creates a MySQL user (`phpmyadmin`) specifically for phpMyAdmin
+- ✅ Automatically sets up the database schema and tables
+- ✅ Stores phpMyAdmin settings, bookmarks, and user preferences
+- ✅ Makes future phpMyAdmin updates easier
+- ✅ Better security isolation (separate user for phpMyAdmin)
+
+**Why you might choose No:**
+- ❌ You want to manually configure the database later
+- ❌ You prefer to use an existing database
+- ❌ You want more control over the database setup
+
+**Recommendation:** Choose **`Yes`** for easier setup and better security.
+
+#### Prompt 3: MySQL Application Password
+
+If you chose "Yes" in the previous step, you'll be asked for a password:
+
+```
+┌─────────────────────────────────────┐
+│ Configuring phpmyadmin              │
+├─────────────────────────────────────┘
+│                                     │
+│ Please provide a password for       │
+│ phpmyadmin to register with         │
+│ the database server. If left blank, │
+│ a random password will be generated.│
+│                                     │
+│ MySQL application password for       │
+│ phpmyadmin:                         │
+│                                     │
+│ [_____________________________]     │
+│                                     │
+│            <Ok>                     │
+└─────────────────────────────────────┘
+```
+
+**What to do:**
+- **Option 1 (Recommended):** Enter a **strong password** (save it securely!)
+  - This password is for the `phpmyadmin` MySQL user
+  - You'll need this if you want to access phpMyAdmin's internal database
+  - **Save this password** - you might need it for troubleshooting
+
+- **Option 2:** Leave it blank and let the system generate a random password
+  - The password will be stored in `/etc/phpmyadmin/config-db.php`
+  - You can retrieve it later if needed
+
+**Password Requirements:**
+
+**⚠️ IMPORTANT:** MySQL 8.0 has strict password validation policies. Your password must meet these requirements:
+
+- **Minimum length:** 8 characters (MEDIUM policy) or 20 characters (STRONG policy)
+- **Must contain:** 
+  - At least 1 uppercase letter (A-Z)
+  - At least 1 lowercase letter (a-z)
+  - At least 1 number (0-9)
+  - At least 1 special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
+- **Cannot contain:** Common dictionary words or your username
+
+**Good password examples:**
+- `MyPhpMyAdmin2025!Secure` ✅ (meets all requirements)
+- `P@ssw0rd123!Admin` ✅
+- `Secure#2025$PhpMyAdmin` ✅
+
+**Bad password examples:**
+- `password123` ❌ (no uppercase, no special char)
+- `PASSWORD123` ❌ (no lowercase, no special char)
+- `Password` ❌ (too short, no number, no special char)
+- `MyPassword123` ❌ (no special character)
+
+**Check your MySQL password policy:**
+```bash
+sudo mysql -u root -p -e "SHOW VARIABLES LIKE 'validate_password%';"
+```
+
+**Important:** This password is **NOT** the same as:
+- Your MySQL root password
+- Your application database user password (`tree_app`)
+- The password you'll use to login to phpMyAdmin web interface
+
+#### Prompt 4: Confirm Password (if you entered one)
+
+If you entered a password, you'll be asked to confirm it:
+
+```
+┌─────────────────────────────────────┐
+│ Configuring phpmyadmin              │
+├─────────────────────────────────────┘
+│                                     │
+│ Re-enter password to verify:       │
+│                                     │
+│ [_____________________________]     │
+│                                     │
+│            <Ok>                     │
+└─────────────────────────────────────┘
+```
+
+**What to do:**
+- Enter the **same password** you entered in the previous step
+- Press **Enter** to continue
+
+#### What Happens After Installation
+
+After you complete the prompts, the installer will:
+
+1. Create a MySQL database named `phpmyadmin`
+2. Create a MySQL user named `phpmyadmin` (if you chose "Yes")
+3. Import the phpMyAdmin schema into the database
+4. Store configuration in `/etc/phpmyadmin/config-db.php`
+5. Set up phpMyAdmin files in `/usr/share/phpmyadmin/`
+
+#### Verify Installation
+
+After installation completes, verify everything is set up correctly:
+
+```bash
+# Check if phpMyAdmin database was created
+sudo mysql -u root -p -e "SHOW DATABASES;" | grep phpmyadmin
+
+# Check if phpMyAdmin user was created (if you chose "Yes")
+sudo mysql -u root -p -e "SELECT User, Host FROM mysql.user WHERE User='phpmyadmin';"
+
+# Check phpMyAdmin files
+ls -la /usr/share/phpmyadmin/
+
+# Check configuration file
+sudo cat /etc/phpmyadmin/config-db.php
+```
+
+#### If You Chose "No" - Manual Database Setup
+
+If you chose "No" and want to set up the database manually later:
+
+```bash
+# Login to MySQL
+sudo mysql -u root -p
+
+# In MySQL prompt:
+```
+
+```sql
+-- Create database
+CREATE DATABASE phpmyadmin CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Create user
+CREATE USER 'phpmyadmin'@'localhost' IDENTIFIED BY 'your_strong_password';
+
+-- Grant privileges
+GRANT ALL PRIVILEGES ON phpmyadmin.* TO 'phpmyadmin'@'localhost';
+FLUSH PRIVILEGES;
+
+-- Import schema
+USE phpmyadmin;
+SOURCE /usr/share/phpmyadmin/sql/create_tables.sql;
+
+-- Exit
+EXIT;
+```
+
+Then update the configuration:
+```bash
+sudo nano /etc/phpmyadmin/config-db.php
+```
+
+Update these lines:
+```php
+$dbuser='phpmyadmin';
+$dbpass='your_strong_password';
+$basepath='';
+$dbname='phpmyadmin';
+```
+
+### 4.3 Configure phpMyAdmin for Nginx
+
+Since Nginx wasn't automatically configured, we need to set it up manually:
+
+```bash
+# Create symbolic link to phpMyAdmin
+sudo ln -s /usr/share/phpmyadmin /var/www/phpmyadmin
+
+# Set proper permissions
+sudo chown -R www-data:www-data /usr/share/phpmyadmin
+sudo chmod -R 755 /usr/share/phpmyadmin
+```
+
+### 4.4 Create Nginx Configuration for phpMyAdmin
+
+Create a secure Nginx configuration for phpMyAdmin:
+
+```bash
+sudo nano /etc/nginx/sites-available/phpmyadmin
+```
+
+Add the following configuration:
+
+```nginx
+server {
+    listen 80;
+    server_name phpmyadmin.infi-tools.com;  # Use a subdomain for security
+    
+    # Security: Restrict access by IP (optional but recommended)
+    # Uncomment and add your IP address:
+    # allow YOUR_IP_ADDRESS;
+    # deny all;
+
+    root /usr/share/phpmyadmin;
+    index index.php index.html index.htm;
+
+    # Logging
+    access_log /var/log/nginx/phpmyadmin_access.log;
+    error_log /var/log/nginx/phpmyadmin_error.log;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;  # Adjust version if needed
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    # Deny access to sensitive files
+    location ~ /\. {
+        deny all;
+    }
+
+    location ~ /(libraries|setup/frames|setup/libs) {
+        deny all;
+        return 404;
+    }
+}
+```
+
+**Note**: Check your PHP-FPM version:
+```bash
+ls /var/run/php/
+# Look for php*-fpm.sock (e.g., php8.3-fpm.sock)
+```
+
+### 4.5 Enable phpMyAdmin Site
+
+```bash
+# Create symbolic link to enable site
+sudo ln -s /etc/nginx/sites-available/phpmyadmin /etc/nginx/sites-enabled/
+
+# Test Nginx configuration
+sudo nginx -t
+
+# If test passes, reload Nginx
+sudo systemctl reload nginx
+```
+
+### 4.6 Secure phpMyAdmin
+
+**IMPORTANT**: phpMyAdmin is a common target for attacks. Follow these security steps:
+
+#### Option 1: Restrict by IP Address (Recommended)
+
+Edit the Nginx config to only allow your IP:
+
+```bash
+sudo nano /etc/nginx/sites-available/phpmyadmin
+```
+
+Uncomment and modify the allow/deny lines:
+```nginx
+# Add your IP address (find it with: curl ifconfig.me)
+allow YOUR_IP_ADDRESS;
+deny all;
+```
+
+Reload Nginx:
+```bash
+sudo systemctl reload nginx
+```
+
+#### Option 2: Use HTTP Authentication
+
+Create a password file:
+
+```bash
+# Install apache2-utils for htpasswd
+sudo apt install apache2-utils -y
+
+# Create password file (replace 'admin' with your desired username)
+sudo htpasswd -c /etc/nginx/.htpasswd admin
+# Enter a strong password when prompted
+```
+
+Update Nginx config:
+
+```bash
+sudo nano /etc/nginx/sites-available/phpmyadmin
+```
+
+Add inside the `server` block:
+```nginx
+location / {
+    auth_basic "Admin Area";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+    try_files $uri $uri/ =404;
+}
+```
+
+Reload Nginx:
+```bash
+sudo systemctl reload nginx
+```
+
+#### Option 3: Use a Subdomain with SSL
+
+1. Create a DNS A record: `phpmyadmin.infi-tools.com` → `110.4.47.197`
+2. Get SSL certificate:
+```bash
+sudo certbot --nginx -d phpmyadmin.infi-tools.com
+```
+
+### 4.7 Access phpMyAdmin
+
+1. **If using subdomain**: Visit `http://phpmyadmin.infi-tools.com` (or `https://` if SSL is configured)
+2. **If using IP restriction**: Make sure you're accessing from the allowed IP
+3. **Login credentials**:
+   - **Username**: `tree_app` (or `root` for MySQL root)
+   - **Password**: The password you set for the MySQL user
+
+### 4.8 phpMyAdmin Useful Features
+
+Once logged in, you can:
+
+- **Browse databases**: Click on `direct_sales_tree` in the left sidebar
+- **View tables**: Click on any table to see its data
+- **Run SQL queries**: Click "SQL" tab to run custom queries
+- **Export data**: Select database/table → "Export" tab
+- **Import data**: Select database → "Import" tab
+- **Structure**: View table structure, indexes, and relationships
+
+### 4.9 Troubleshooting phpMyAdmin
+
+#### Issue: "404 Not Found" when accessing phpMyAdmin
+
+```bash
+# Check if phpMyAdmin is installed
+ls -la /usr/share/phpmyadmin
+
+# Check Nginx configuration
+sudo nginx -t
+
+# Check if site is enabled
+ls -la /etc/nginx/sites-enabled/ | grep phpmyadmin
+
+# Check Nginx error logs
+sudo tail -f /var/log/nginx/error.log
+```
+
+#### Issue: "502 Bad Gateway"
+
+```bash
+# Check PHP-FPM status
+sudo systemctl status php8.3-fpm  # Adjust version
+
+# Check PHP-FPM socket
+ls -la /var/run/php/
+
+# Restart PHP-FPM
+sudo systemctl restart php8.3-fpm
+```
+
+#### Issue: "Access Denied" or "Forbidden"
+
+```bash
+# Check permissions
+sudo chown -R www-data:www-data /usr/share/phpmyadmin
+sudo chmod -R 755 /usr/share/phpmyadmin
+
+# Check Nginx error logs
+sudo tail -f /var/log/nginx/error.log
+```
+
+#### Issue: "ERROR 1819: Your password does not satisfy the current policy requirements"
+
+**Error Message:**
+```
+mysql said: ERROR 1819 (HY000) at line 1: Your password does not satisfy the current policy requirements
+```
+
+**Why this happens:**
+MySQL 8.0 has a built-in password validation plugin that enforces strict password policies. Your password doesn't meet MySQL's requirements.
+
+**Solution 1: Use a Stronger Password (Recommended)**
+
+When prompted for the phpMyAdmin password, use a password that meets ALL these requirements:
+- ✅ At least 8 characters (or 20 if STRONG policy is enabled)
+- ✅ Contains uppercase letters (A-Z)
+- ✅ Contains lowercase letters (a-z)
+- ✅ Contains numbers (0-9)
+- ✅ Contains special characters (!@#$%^&*()_+-=[]{}|;:,.<>?)
+
+**Example passwords that work:**
+- `MyPhpMyAdmin2025!Secure`
+- `P@ssw0rd123!Admin`
+- `Secure#2025$PhpMyAdmin`
+
+**Solution 2: Check and Adjust MySQL Password Policy**
+
+First, check your current password policy:
+
+```bash
+sudo mysql -u root -p
+```
+
+In MySQL prompt:
+```sql
+-- Check current password policy
+SHOW VARIABLES LIKE 'validate_password%';
+```
+
+You'll see output like:
+```
++--------------------------------------+--------+
+| Variable_name                        | Value  |
++--------------------------------------+--------+
+| validate_password.check_user_name    | ON     |
+| validate_password.dictionary_file    |        |
+| validate_password.length             | 8      |
+| validate_password.mixed_case_count   | 1      |
+| validate_password.number_count       | 1      |
+| validate_password.policy             | MEDIUM |
+| validate_password.special_char_count | 1      |
++--------------------------------------+--------+
+```
+
+**Option A: Temporarily Lower Password Policy (For Installation Only)**
+
+```sql
+-- Set policy to LOW (minimum 8 chars, no complexity required)
+SET GLOBAL validate_password.policy = LOW;
+SET GLOBAL validate_password.length = 6;
+SET GLOBAL validate_password.mixed_case_count = 0;
+SET GLOBAL validate_password.number_count = 0;
+SET GLOBAL validate_password.special_char_count = 0;
+
+-- Exit MySQL
+EXIT;
+```
+
+**⚠️ Security Warning:** This makes passwords less secure. Only do this temporarily during installation, then set it back.
+
+Now retry the phpMyAdmin installation:
+```bash
+# Choose option 2 (retry) when prompted
+# Enter a simpler password (minimum 8 characters)
+```
+
+After installation, restore the policy:
+```bash
+sudo mysql -u root -p
+```
+
+```sql
+-- Restore MEDIUM policy
+SET GLOBAL validate_password.policy = MEDIUM;
+SET GLOBAL validate_password.mixed_case_count = 1;
+SET GLOBAL validate_password.number_count = 1;
+SET GLOBAL validate_password.special_char_count = 1;
+EXIT;
+```
+
+**Option B: Disable Password Validation (NOT Recommended for Production)**
+
+```sql
+-- Uninstall password validation plugin
+UNINSTALL PLUGIN validate_password;
+
+-- Exit
+EXIT;
+```
+
+**⚠️ Security Warning:** This completely disables password validation. Only use for development/testing.
+
+**Solution 3: Configure Password Policy Before Installation**
+
+Set up the password policy before installing phpMyAdmin:
+
+```bash
+sudo mysql -u root -p
+```
+
+```sql
+-- Set a reasonable policy
+SET GLOBAL validate_password.policy = MEDIUM;
+SET GLOBAL validate_password.length = 8;
+SET GLOBAL validate_password.mixed_case_count = 1;
+SET GLOBAL validate_password.number_count = 1;
+SET GLOBAL validate_password.special_char_count = 1;
+
+-- Exit
+EXIT;
+```
+
+Then install phpMyAdmin with a password that meets these requirements.
+
+**Solution 4: Let System Generate Password**
+
+If you're having trouble creating a valid password, let the system generate one:
+
+1. When prompted for password, **leave it blank** and press Enter
+2. The system will generate a random password that meets all requirements
+3. Retrieve it later from the config file:
+
+```bash
+sudo cat /etc/phpmyadmin/config-db.php | grep dbpass
+```
+
+**What to do when you see the error prompt:**
+
+```
+Your options are:
+ * abort - Causes the operation to fail
+ * retry - Prompts once more with all the configuration questions
+ * retry (skip questions) - Immediately attempts the operation again
+ * ignore - Continues the operation ignoring dbconfig-common errors
+
+  1. abort  2. retry  3. retry (skip questions)  4. ignore
+```
+
+**Recommended action:**
+1. Choose **`2` (retry)** - This lets you enter a new password
+2. Enter a password that meets all requirements (see Solution 1)
+3. If it still fails, use **Solution 2** to temporarily lower the policy
+
+**Solution 5: Completely Bypass Password Validation (Temporary)**
+
+If you've tried all the above and still getting errors, you can completely disable password validation temporarily:
+
+**First, check if the plugin exists:**
+
+```bash
+sudo mysql -u root -p
+```
+
+```sql
+-- Check if validate_password plugin exists
+SHOW PLUGINS LIKE 'validate_password%';
+
+-- Or check all plugins
+SHOW PLUGINS;
+
+-- Check variables (if plugin is active)
+SHOW VARIABLES LIKE 'validate_password%';
+```
+
+**If the plugin doesn't exist or is not installed:**
+
+The password validation might be built into MySQL 8.0 differently. Try these approaches:
+
+**Option A: Check if it's a component instead of plugin (MySQL 8.0.4+)**
+
+```sql
+-- Check installed components
+SELECT * FROM mysql.component WHERE component_id LIKE '%validate%';
+
+-- Uninstall component (if exists)
+UNINSTALL COMPONENT 'file://component_validate_password';
+
+-- Exit
+EXIT;
+```
+
+**Option B: If plugin doesn't exist, password validation might be disabled already**
+
+If you get **"ERROR 1305: PLUGIN validate_password does not exist"**, this means:
+
+✅ **Good news:** Password validation is NOT active on your system  
+✅ You can use ANY password (even simple ones)  
+✅ You can proceed with phpMyAdmin installation immediately  
+
+**What to do:**
+1. Simply retry the phpMyAdmin installation
+2. When prompted for password, enter ANY password (e.g., `password123`)
+3. The installation should proceed without password validation errors
+
+**Why this happens:**
+- In MySQL 8.0.4+, password validation changed from plugin to component
+- Your MySQL installation might not have the validation component installed
+- Or it might be disabled by default
+
+**Option C: Disable via configuration file**
+
+```bash
+# Edit MySQL configuration
+sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+```
+
+Add this line under `[mysqld]` section:
+```ini
+validate_password = OFF
+```
+
+Then restart MySQL:
+```bash
+sudo systemctl restart mysql
+```
+
+**Option D: If plugin exists, uninstall it**
+
+```sql
+-- Try uninstalling plugin
+UNINSTALL PLUGIN validate_password;
+
+-- If that doesn't work, try:
+UNINSTALL PLUGIN IF EXISTS validate_password;
+
+-- Verify it's disabled
+SHOW VARIABLES LIKE 'validate_password%';
+
+-- Exit MySQL
+EXIT;
+```
+
+Now install phpMyAdmin:
+```bash
+# Retry phpMyAdmin installation
+sudo dpkg-reconfigure phpmyadmin
+# OR
+sudo apt install --reinstall phpmyadmin
+```
+
+When prompted for password, you can use ANY password now (even simple ones like `password123`).
+
+**After installation, re-enable password validation (if needed):**
+
+**If you disabled it via component:**
+```bash
+sudo mysql -u root -p
+```
+
+```sql
+-- Reinstall component
+INSTALL COMPONENT 'file://component_validate_password';
+
+-- Set policy
+SET GLOBAL validate_password.policy = MEDIUM;
+EXIT;
+```
+
+**If you disabled it via config file:**
+```bash
+# Remove the validate_password = OFF line
+sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+
+# Restart MySQL
+sudo systemctl restart mysql
+```
+
+**If plugin was uninstalled:**
+```bash
+sudo mysql -u root -p
+```
+
+```sql
+-- Try to install plugin (may not work if it's a component)
+INSTALL PLUGIN validate_password SONAME 'validate_password.so';
+
+-- Or install as component
+INSTALL COMPONENT 'file://component_validate_password';
+
+-- Set policy
+SET GLOBAL validate_password.policy = MEDIUM;
+SET GLOBAL validate_password.length = 8;
+SET GLOBAL validate_password.mixed_case_count = 1;
+SET GLOBAL validate_password.number_count = 1;
+SET GLOBAL validate_password.special_char_count = 1;
+
+-- Exit
+EXIT;
+```
+
+**Note:** If the plugin doesn't exist, password validation might not be enabled on your system, which means you can use any password without restrictions.
+
+**Solution 6: Skip Database Configuration Entirely (Manual Setup)**
+
+If you want to completely bypass dbconfig-common, install phpMyAdmin without database configuration:
+
+```bash
+# 1. Install phpMyAdmin but skip database setup
+sudo DEBIAN_FRONTEND=noninteractive apt install phpmyadmin -y
+
+# 2. When you see the error prompt, choose option 4 (ignore)
+# This will install phpMyAdmin files but skip database configuration
+```
+
+Then manually set up the database:
+
+```bash
+# Login to MySQL
+sudo mysql -u root -p
+```
+
+```sql
+-- Create database (no password validation needed for root user)
+CREATE DATABASE phpmyadmin CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Create user with a simple password (since validation is disabled temporarily)
+CREATE USER 'phpmyadmin'@'localhost' IDENTIFIED BY 'phpmyadmin123';
+
+-- Grant privileges
+GRANT ALL PRIVILEGES ON phpmyadmin.* TO 'phpmyadmin'@'localhost';
+FLUSH PRIVILEGES;
+
+-- Import phpMyAdmin tables
+USE phpmyadmin;
+SOURCE /usr/share/phpmyadmin/sql/create_tables.sql;
+
+-- Exit
+EXIT;
+```
+
+Update phpMyAdmin configuration:
+```bash
+sudo nano /etc/phpmyadmin/config-db.php
+```
+
+Update these lines:
+```php
+$dbuser='phpmyadmin';
+$dbpass='phpmyadmin123';
+$basepath='';
+$dbname='phpmyadmin';
+```
+
+**Solution 7: One-Command Bypass (Easiest)**
+
+Run this single command to disable validation, install, then re-enable:
+
+```bash
+# Disable validation, install phpMyAdmin, then re-enable validation
+sudo mysql -u root -p -e "UNINSTALL PLUGIN validate_password;" && \
+sudo DEBIAN_FRONTEND=noninteractive apt install phpmyadmin -y && \
+sudo mysql -u root -p -e "INSTALL PLUGIN validate_password SONAME 'validate_password.so'; SET GLOBAL validate_password.policy = MEDIUM;"
+```
+
+When you see the error prompt during installation, choose **`4` (ignore)** to skip database configuration, then manually set it up as shown in Solution 6.
+
+**Quick Fix Summary (Choose One):**
+
+**Option A - Check and Disable Validation:**
+
+```bash
+# 1. Check if password validation is active
+sudo mysql -u root -p -e "SHOW VARIABLES LIKE 'validate_password%';"
+
+# 2a. If plugin exists, uninstall it
+sudo mysql -u root -p -e "UNINSTALL PLUGIN IF EXISTS validate_password;"
+
+# 2b. If it's a component, uninstall component
+sudo mysql -u root -p -e "UNINSTALL COMPONENT 'file://component_validate_password';"
+
+# 2c. If neither works, disable via config file
+sudo sed -i '/\[mysqld\]/a validate_password = OFF' /etc/mysql/mysql.conf.d/mysqld.cnf
+sudo systemctl restart mysql
+
+# 3. Retry phpMyAdmin installation
+sudo dpkg-reconfigure phpmyadmin
+# Choose option 2 (retry) and enter ANY password
+
+# 4. Re-enable password validation (optional, after installation)
+# sudo mysql -u root -p -e "INSTALL COMPONENT 'file://component_validate_password'; SET GLOBAL validate_password.policy = MEDIUM;"
+```
+
+**Option B - Skip Database Config:**
+```bash
+# 1. Install and ignore database errors
+sudo DEBIAN_FRONTEND=noninteractive apt install phpmyadmin -y
+# When error appears, choose option 4 (ignore)
+
+# 2. Manually create database (see Solution 6 above)
+```
+
+#### Issue: Can't login to phpMyAdmin
+
+- Verify MySQL user exists and has correct password
+- Try logging in as MySQL root user first
+- Check MySQL user privileges:
+```bash
+sudo mysql -u root -p
+```
+```sql
+SHOW GRANTS FOR 'tree_app'@'localhost';
+```
+
+### 4.10 Security Best Practices
+
+1. **Change default URL**: Consider renaming the phpMyAdmin directory
+2. **Use HTTPS**: Always use SSL certificate for phpMyAdmin
+3. **Restrict IP access**: Only allow your IP addresses
+4. **Strong passwords**: Use complex passwords for MySQL users
+5. **Regular updates**: Keep phpMyAdmin updated
+   ```bash
+   sudo apt update && sudo apt upgrade phpmyadmin -y
+   ```
+6. **Disable when not needed**: Consider disabling phpMyAdmin when not in use
+7. **Monitor access logs**: Regularly check access logs for suspicious activity
+
+---
+
+## 5. Deploy Application
+
+### 5.1 Clone Repository
 
 ```bash
 # Navigate to projects directory
@@ -190,13 +1078,13 @@ mkdir -p /root/projects/tree_system
 # Then upload files via SCP or SFTP
 ```
 
-### 4.2 Navigate to Project Directory
+### 5.2 Navigate to Project Directory
 
 ```bash
 cd /root/projects/tree_system
 ```
 
-### 4.3 Create Environment File
+### 5.3 Create Environment File
 
 ```bash
 # Copy example env file
@@ -225,9 +1113,9 @@ NODE_ENV=production
 
 ---
 
-## 5. Build and Configure Application
+## 6. Build and Configure Application
 
-### 5.1 Install Dependencies
+### 6.1 Install Dependencies
 
 ```bash
 # Install root dependencies
@@ -245,7 +1133,7 @@ cd ..
 
 **Note:** If you encounter "Permission denied" errors with `tsc` or other binaries, see [Troubleshooting Section 12.7](#127-permission-denied-errors).
 
-### 5.2 Setup Database Schema
+### 6.2 Setup Database Schema
 
 ```bash
 # Import database schema
@@ -255,14 +1143,14 @@ mysql -u tree_app -p direct_sales_tree < src/database/schema.sql
 mysql -u tree_app -p direct_sales_tree < src/database/beehive-schema.sql
 ```
 
-### 5.3 Import Sample Data (Optional)
+### 6.3 Import Sample Data (Optional)
 
 ```bash
 # Import CSV data (if you have sample data)
 npm run import-csv
 ```
 
-### 5.4 Build Application
+### 6.4 Build Application
 
 ```bash
 # Build both backend and frontend
@@ -273,7 +1161,7 @@ npm run build
 # - Build React frontend to frontend/dist/
 ```
 
-### 5.5 Update CORS Settings for Production
+### 6.5 Update CORS Settings for Production
 
 ```bash
 # Edit server.ts to update CORS for your domain
@@ -301,9 +1189,9 @@ npm run build:backend
 
 ---
 
-## 6. Setup Process Manager (PM2)
+## 7. Setup Process Manager (PM2)
 
-### 6.1 Start Application with PM2
+### 7.1 Start Application with PM2
 
 ```bash
 # Start the application
@@ -317,7 +1205,7 @@ pm2 startup
 # Follow the instructions shown (usually run a sudo command)
 ```
 
-### 6.2 PM2 Useful Commands
+### 7.2 PM2 Useful Commands
 
 ```bash
 # Check status
@@ -338,9 +1226,9 @@ pm2 monit
 
 ---
 
-## 7. Configure Nginx Reverse Proxy
+## 8. Configure Nginx Reverse Proxy
 
-### 7.1 Create Nginx Configuration
+### 8.1 Create Nginx Configuration
 
 ```bash
 # Create configuration file
@@ -400,7 +1288,7 @@ server {
 
 **Save and exit:** `Ctrl+X`, then `Y`, then `Enter`
 
-### 7.2 Enable Site and Test Configuration
+### 8.2 Enable Site and Test Configuration
 
 ```bash
 # Create symbolic link
@@ -416,123 +1304,18 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-### 7.3 Add Second Domain (Wedding RSVP System)
-
-To add the wedding RSVP domain `jsang-psong-wedding.com`, follow these steps:
-
-**Step 1: Clone or Upload Wedding RSVP Project**
-
-```bash
-# Navigate to projects directory
-cd /root/projects
-
-# Clone the wedding RSVP repository
-git clone https://github.com/123ang/wedding_rsvp.git wedding_rsvp
-
-# Or if you need to upload files manually:
-# mkdir -p /root/projects/wedding_rsvp
-# Then upload files via SCP or SFTP
-```
-
-**Step 2: Build the Wedding RSVP Project (if needed)**
-
-```bash
-cd /root/projects/wedding_rsvp
-
-# Install dependencies
-npm install
-
-# Build the project (if it's a Vite/React project)
-npm run build
-
-# The built files will be in the 'dist' directory
-```
-
-**Step 3: Create Nginx Configuration for Wedding Domain**
-
-```bash
-# Create configuration file for wedding domain
-sudo nano /etc/nginx/sites-available/wedding
-```
-
-**Add the following configuration:**
-
-```nginx
-server {
-    listen 80;
-    server_name jsang-psong-wedding.com www.jsang-psong-wedding.com;
-
-    # Increase body size limit for file uploads
-    client_max_body_size 10M;
-
-    # Root directory - adjust based on your project structure
-    # If using Vite build, serve from 'dist' directory
-    root /root/projects/wedding_rsvp/dist;
-    
-    # Or if it's a static site, serve from root:
-    # root /root/projects/wedding_rsvp;
-
-    index index.html;
-
-    # Handle client-side routing (for React/Vue SPA)
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # Serve static assets with caching
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # API proxy (if the wedding site has a backend API)
-    # Uncomment and adjust if needed:
-    # location /api {
-    #     proxy_pass http://127.0.0.1:PORT;
-    #     proxy_http_version 1.1;
-    #     proxy_set_header Upgrade $http_upgrade;
-    #     proxy_set_header Connection 'upgrade';
-    #     proxy_set_header Host $host;
-    #     proxy_set_header X-Real-IP $remote_addr;
-    #     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    #     proxy_set_header X-Forwarded-Proto $scheme;
-    #     proxy_cache_bypass $http_upgrade;
-    # }
-}
-```
-
-**Save and exit:** `Ctrl+X`, then `Y`, then `Enter`
-
-**Step 4: Enable Wedding Site**
-
-```bash
-# Create symbolic link
-sudo ln -s /etc/nginx/sites-available/wedding /etc/nginx/sites-enabled/
-
-# Test Nginx configuration
-sudo nginx -t
-
-# If test passes, reload Nginx
-sudo systemctl reload nginx
-```
-
-**Note:** 
-- Adjust the `root` path based on your wedding project structure
-- If the project uses Firebase Functions or a separate backend, you may need to proxy those routes
-- Check the project's build output directory (could be `dist`, `build`, or `public`)
-
 ---
 
-## 8. Setup SSL Certificate
+## 9. Setup SSL Certificate
 
-### 8.1 Install Certbot
+### 9.1 Install Certbot
 
 ```bash
 # Install Certbot
 sudo apt install certbot python3-certbot-nginx -y
 ```
 
-### 8.2 Obtain SSL Certificate for infi-tools.com
+### 9.2 Obtain SSL Certificate for infi-tools.com
 
 ```bash
 # Get SSL certificate for infi-tools.com (this will automatically configure Nginx)
@@ -544,24 +1327,7 @@ sudo certbot --nginx -d infi-tools.com -d www.infi-tools.com
 # - Choose whether to redirect HTTP to HTTPS (recommended: Yes)
 ```
 
-### 8.3 Obtain SSL Certificate for Wedding Domain
-
-```bash
-# Get SSL certificate for jsang-psong-wedding.com
-sudo certbot --nginx -d jsang-psong-wedding.com -d www.jsang-psong-wedding.com
-
-# During setup:
-# - Enter your email address
-# - Agree to terms of service
-# - Choose whether to redirect HTTP to HTTPS (recommended: Yes)
-```
-
-**Note:** You can also get certificates for both domains in one command:
-```bash
-sudo certbot --nginx -d infi-tools.com -d www.infi-tools.com -d jsang-psong-wedding.com -d www.jsang-psong-wedding.com
-```
-
-### 8.4 Auto-Renewal Setup
+### 9.3 Auto-Renewal Setup
 
 ```bash
 # Test auto-renewal
@@ -573,9 +1339,9 @@ sudo systemctl status certbot.timer
 
 ---
 
-## 9. Configure Domain DNS
+## 10. Configure Domain DNS
 
-### 9.1 DNS Records for infi-tools.com
+### 10.1 DNS Records for infi-tools.com
 
 In your domain registrar's DNS settings for `infi-tools.com`, add the following records:
 
@@ -595,27 +1361,7 @@ Value: 110.4.47.197
 TTL: 3600 (or default)
 ```
 
-### 9.2 DNS Records for jsang-psong-wedding.com
-
-In your domain registrar's DNS settings for `jsang-psong-wedding.com`, add the following records:
-
-**A Record:**
-```
-Type: A
-Name: @ (or jsang-psong-wedding.com)
-Value: 110.4.47.197
-TTL: 3600 (or default)
-```
-
-**A Record for www:**
-```
-Type: A
-Name: www
-Value: 110.4.47.197
-TTL: 3600 (or default)
-```
-
-### 9.3 Verify DNS Propagation
+### 10.2 Verify DNS Propagation
 
 **Option 1: Using `dig` (usually pre-installed)**
 ```bash
@@ -623,13 +1369,8 @@ TTL: 3600 (or default)
 dig infi-tools.com
 dig www.infi-tools.com
 
-# Check DNS resolution for wedding domain
-dig jsang-psong-wedding.com
-dig www.jsang-psong-wedding.com
-
 # Get just the IP address
 dig +short infi-tools.com
-dig +short jsang-psong-wedding.com
 ```
 
 **Option 2: Using `host` (usually pre-installed)**
@@ -637,8 +1378,6 @@ dig +short jsang-psong-wedding.com
 # Check DNS resolution
 host infi-tools.com
 host www.infi-tools.com
-host jsang-psong-wedding.com
-host www.jsang-psong-wedding.com
 ```
 
 **Option 3: Install and use `nslookup` (if not available)**
@@ -649,27 +1388,24 @@ sudo apt install dnsutils -y
 # Then use nslookup
 nslookup infi-tools.com
 nslookup www.infi-tools.com
-nslookup jsang-psong-wedding.com
-nslookup www.jsang-psong-wedding.com
 ```
 
 **Option 4: Quick check with `curl` (if site is already responding)**
 ```bash
 # This will show if DNS is resolving and site is accessible
 curl -I http://infi-tools.com
-curl -I http://jsang-psong-wedding.com
 ```
 
 **Expected Output:**
-All commands should show the IP address `110.4.47.197` for both domains.
+All commands should show the IP address `110.4.47.197`.
 
 **Wait 5-30 minutes for DNS propagation before proceeding with SSL setup.**
 
 ---
 
-## 10. Testing and Verification
+## 11. Testing and Verification
 
-### 10.1 Test Backend API
+### 11.1 Test Backend API
 
 ```bash
 # Test health endpoint
@@ -679,7 +1415,7 @@ curl http://localhost:3000/api/health
 curl https://infi-tools.com/api/health
 ```
 
-### 10.2 Test Frontend
+### 11.2 Test Frontend
 
 **infi-tools.com:**
 - `https://infi-tools.com` - Main application
@@ -687,18 +1423,14 @@ curl https://infi-tools.com/api/health
 - `https://infi-tools.com/embed.html?memberId=1&maxDepth=3` - Embed page
 - `https://infi-tools.com/example-integration.html` - Integration examples
 
-**jsang-psong-wedding.com:**
-- `https://jsang-psong-wedding.com` - Wedding RSVP site
-- `https://www.jsang-psong-wedding.com` - Wedding RSVP site (www)
-
-### 10.3 Test Database Connection
+### 11.3 Test Database Connection
 
 ```bash
 # Check if application can connect to database
 pm2 logs tree-api | grep -i "database\|error\|connected"
 ```
 
-### 10.4 Verify All Services
+### 11.4 Verify All Services
 
 ```bash
 # Check PM2
@@ -716,9 +1448,9 @@ sudo ufw status
 
 ---
 
-## 11. Maintenance Commands
+## 12. Maintenance Commands
 
-### 11.1 Update Application
+### 12.1 Update Application
 
 ```bash
 cd /root/projects/tree_system
@@ -737,7 +1469,7 @@ npm run build
 pm2 restart tree-api
 ```
 
-### 11.2 View Logs
+### 12.2 View Logs
 
 ```bash
 # Application logs
@@ -753,7 +1485,7 @@ sudo tail -f /var/log/nginx/error.log
 sudo tail -f /var/log/mysql/error.log
 ```
 
-### 11.3 Database Backup
+### 12.3 Database Backup
 
 ```bash
 # Create backup
@@ -763,7 +1495,7 @@ mysqldump -u tree_app -p direct_sales_tree > backup_$(date +%Y%m%d_%H%M%S).sql
 mysql -u tree_app -p direct_sales_tree < backup_file.sql
 ```
 
-### 11.4 Import New CSV Data
+### 12.4 Import New CSV Data
 
 ```bash
 cd /root/projects/tree_system
@@ -775,9 +1507,9 @@ npm run import-csv
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
-### 12.1 Application Won't Start
+### 13.1 Application Won't Start
 
 ```bash
 # Check PM2 logs
@@ -793,7 +1525,7 @@ cat .env
 mysql -u tree_app -p direct_sales_tree
 ```
 
-### 12.2 Connection Refused (DNS resolves but can't connect)
+### 13.2 Connection Refused (DNS resolves but can't connect)
 
 If DNS resolves correctly but you get "connection refused" or "site can't be reached":
 
@@ -838,7 +1570,6 @@ sudo nginx -t
 
 # If there are errors, check the configuration files
 sudo nano /etc/nginx/sites-available/infi-tools
-sudo nano /etc/nginx/sites-available/wedding
 
 # Make sure sites are enabled
 ls -la /etc/nginx/sites-enabled/
@@ -871,7 +1602,7 @@ sudo grep -r "listen" /etc/nginx/sites-enabled/
 # Should show "listen 80;" not "listen 127.0.0.1:80;"
 ```
 
-### 12.4 Nginx 502 Bad Gateway
+### 13.3 Nginx 502 Bad Gateway
 
 ```bash
 # Check if application is running
@@ -887,7 +1618,7 @@ curl http://localhost:3000/api/health
 sudo tail -f /var/log/nginx/error.log
 ```
 
-### 12.5 Database Connection Errors
+### 13.4 Database Connection Errors
 
 ```bash
 # Verify MySQL is running
@@ -903,7 +1634,7 @@ sudo tail -f /var/log/mysql/error.log
 cat .env | grep DB_
 ```
 
-### 12.6 SSL Certificate Issues
+### 13.5 SSL Certificate Issues
 
 **Symptoms:** HTTP works but HTTPS doesn't work
 
@@ -1026,7 +1757,7 @@ sudo ufw status | grep 443
 curl -I https://infi-tools.com
 ```
 
-### 12.7 Permission Issues
+### 13.6 Permission Issues
 
 **Error: "Permission denied" when Nginx tries to access files**
 
@@ -1040,8 +1771,6 @@ sudo chown -R www-data:www-data /root/projects/tree_system/frontend/dist
 # Also fix public directory if needed
 sudo chown -R www-data:www-data /root/projects/tree_system/public
 
-# For wedding site (if applicable)
-sudo chown -R www-data:www-data /root/projects/wedding_rsvp/dist
 ```
 
 **Solution 2: Fix directory permissions (Alternative)**
@@ -1088,7 +1817,7 @@ sudo chmod 755 /root/projects/tree_system/frontend
 sudo systemctl reload nginx
 ```
 
-### 12.8 Firewall Blocking Connections
+### 13.7 Firewall Blocking Connections
 
 **Symptoms:** Works with `curl` from server but "connection refused" from browser
 
@@ -1183,7 +1912,7 @@ curl -I http://localhost
 sudo nginx -t
 ```
 
-### 12.9 Permission Denied Errors (tsc, npm scripts)
+### 13.8 Permission Denied Errors (tsc, npm scripts)
 
 If you get "Permission denied" errors when running `tsc` or other npm scripts:
 
@@ -1240,7 +1969,7 @@ npx tsc
 
 ---
 
-## 13. Security Checklist
+## 14. Security Checklist
 
 - [ ] Firewall (UFW) is enabled and configured
 - [ ] SSH key authentication is set up (disable password auth)
@@ -1255,15 +1984,12 @@ npx tsc
 
 ---
 
-## 14. Quick Reference
+## 15. Quick Reference
 
 **Tree System Project Location:** `/root/projects/tree_system`  
-**Wedding RSVP Project Location:** `/root/projects/wedding_rsvp`  
 **Backend Port:** `3000`  
 **Database:** `direct_sales_tree`  
-**Domains:** 
-- `infi-tools.com` (Tree System)
-- `jsang-psong-wedding.com` (Wedding RSVP)
+**Domain:** `infi-tools.com`  
 **VPS IP:** `110.4.47.197`
 
 **Key Commands:**
