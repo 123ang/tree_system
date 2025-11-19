@@ -57,8 +57,10 @@ app.use(cors({
     const allowedOrigins = [
       /^http:\/\/localhost:\d+$/,
       /^http:\/\/127\.0\.0\.1:\d+$/,
-      /^https:\/\/yourdomain\.com$/,
-      /^https:\/\/www\.yourdomain\.com$/
+      /^https:\/\/infi-tools\.com$/,
+      /^https:\/\/www\.infi-tools\.com$/,
+      /^http:\/\/infi-tools\.com$/,
+      /^http:\/\/www\.infi-tools\.com$/
     ];
     const isAllowed = allowedOrigins.some((re) => re.test(origin));
     return isAllowed ? callback(null, true) : callback(new Error('Not allowed by CORS'));

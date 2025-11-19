@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import TreeViewer from './components/TreeViewer';
-import TreeViewerDebug from './components/TreeViewerDebug';
 import SearchBar from './components/SearchBar';
 import MemberDetails from './components/MemberDetails';
 import MemberManagement from './components/MemberManagement';
@@ -118,9 +117,8 @@ function AppContent() {
   // Don't load if we're on beehive or members routes
   useEffect(() => {
     // Only load tree if we're on the tree tab and root path
-    // Skip loading if we're on beehive or members routes
     const path = location.pathname;
-    if (activeTab === 'tree' && path === '/' && path !== '/payout' && path !== '/members') {
+    if (activeTab === 'tree' && path === '/') {
       loadRootTree().catch(err => {
         // Silently handle errors - tables might not exist yet
         console.log('Could not load root tree (database may not be set up):', err);

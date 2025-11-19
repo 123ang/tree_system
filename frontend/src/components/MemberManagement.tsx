@@ -315,7 +315,7 @@ const MemberManagement: React.FC<MemberManagementProps> = ({ onMemberSelect, onR
                   <div className="sponsor-chain">
                     <h6>Sponsor Chain:</h6>
                     <ol>
-                      {layerInfo.sponsorChain.map((sponsor, index) => (
+                      {layerInfo.sponsorChain.map((sponsor) => (
                         <li key={sponsor.id}>
                           {sponsor.wallet_address} {sponsor.username && `(${sponsor.username})`}
                         </li>

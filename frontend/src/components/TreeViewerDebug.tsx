@@ -7,7 +7,7 @@ interface TreeViewerDebugProps {
   maxDepth?: number;
 }
 
-const TreeViewerDebug: React.FC<TreeViewerDebugProps> = ({ tree, onNodeClick, maxDepth = 3 }) => {
+const TreeViewerDebug: React.FC<TreeViewerDebugProps> = ({ tree, onNodeClick }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<any>(null);
   const [debugInfo, setDebugInfo] = useState<string>('');
