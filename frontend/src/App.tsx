@@ -336,12 +336,22 @@ function AppContent() {
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      // Reset input if no file selected
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
 
     // Validate file type
     if (!file.name.endsWith('.csv')) {
       setUploadMessage('❌ Please select a CSV file');
       setTimeout(() => setUploadMessage(''), 3000);
+      // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
 
@@ -352,26 +362,43 @@ function AppContent() {
     formData.append('csvFile', file);
 
     try {
-      const response = await fetch('http://localhost:3000/api/database/upload', {
+      // Use the API base URL from environment or default
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+      const response = await fetch(`${apiUrl}/api/database/upload`, {
         method: 'POST',
         body: formData
+        // Don't set Content-Type header - browser will set it with boundary for FormData
       });
+
+      // Check if response is ok before parsing JSON
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = 'Upload failed';
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          errorMessage = errorText || `Server error: ${response.status}`;
+        }
+        throw new Error(errorMessage);
+      }
 
       const data = await response.json();
 
-      if (response.ok && data.success) {
+      if (data.success) {
         setUploadMessage(`✅ File "${data.fileName}" uploaded successfully!`);
-        // Clear file input
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
       } else {
         setUploadMessage(`❌ Upload failed: ${data.error || 'Unknown error'}`);
       }
     } catch (error: any) {
-      setUploadMessage(`❌ Upload error: ${error.message}`);
+      console.error('Upload error:', error);
+      setUploadMessage(`❌ Upload error: ${error.message || 'Failed to upload file'}`);
     } finally {
       setIsUploading(false);
+      // Clear file input after upload completes
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       // Clear message after 5 seconds
       setTimeout(() => setUploadMessage(''), 5000);
     }
@@ -573,16 +600,17 @@ function AppContent() {
           } />
           <Route path="/" element={
             <>
-              <div className="toolbar">
+              <div className="toolbar" style={{ display: 'flex', gap: '10px', alignItems: 'center', width: '100%' }}>
                 <button 
                   className="btn btn-primary" 
                   onClick={loadRootTree}
                   disabled={isLoading}
+                  style={{ flex: '1' }}
                 >
                   Load Root Tree
                 </button>
                 
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flex: '1' }}>
                   <label
                     htmlFor="csv-upload-input"
                     style={{
@@ -595,7 +623,9 @@ function AppContent() {
                       cursor: isUploading ? 'not-allowed' : 'pointer',
                       fontWeight: 600,
                       opacity: isUploading ? 0.7 : 1,
-                      pointerEvents: isUploading ? 'none' : 'auto'
+                      pointerEvents: isUploading ? 'none' : 'auto',
+                      width: '100%',
+                      textAlign: 'center'
                     }}
                   >
                     {isUploading ? '📤 Uploading...' : '📤 Upload CSV'}
@@ -609,37 +639,43 @@ function AppContent() {
                     disabled={isUploading}
                     style={{ display: 'none' }}
                   />
-                  {uploadMessage && (
-                    <span style={{
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      backgroundColor: uploadMessage.includes('✅') ? '#d4edda' : '#f8d7da',
-                      color: uploadMessage.includes('✅') ? '#155724' : '#721c24'
-                    }}>
-                      {uploadMessage}
-                    </span>
-                  )}
-                  
-                  <button 
-                    className="btn btn-secondary" 
-                    onClick={() => setIsDatabaseModalOpen(true)}
-                    style={{ 
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      color: 'white',
-                      border: 'none',
-                      padding: '8px 16px',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontWeight: 600
-                    }}
-                  >
-                    🔧 Database Operations
-                  </button>
                 </div>
                 
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={() => setIsDatabaseModalOpen(true)}
+                  style={{ 
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    flex: '1'
+                  }}
+                >
+                  🔧 Database Operations
+                </button>
+                
+                {uploadMessage && (
+                  <span style={{
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    fontSize: '12px',
+                    backgroundColor: uploadMessage.includes('✅') ? '#d4edda' : '#f8d7da',
+                    color: uploadMessage.includes('✅') ? '#155724' : '#721c24',
+                    position: 'absolute',
+                    top: '50px',
+                    right: '10px',
+                    zIndex: 1000
+                  }}>
+                    {uploadMessage}
+                  </span>
+                )}
+                
                 {tree && (
-                  <div style={{ marginLeft: 'auto', color: '#666' }}>
+                  <div style={{ marginLeft: 'auto', color: '#666', flex: '0 0 auto' }}>
                     Showing {maxDepth} level{maxDepth !== 1 ? 's' : ''} of tree
                   </div>
                 )}

@@ -6,7 +6,7 @@ import fs from 'fs';
 
 // Configure multer for CSV file uploads
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (_req: any, _file: any, cb: any) => {
     const projectRoot = path.join(__dirname, '..', '..');
     const csvFolder = path.join(projectRoot, 'csv');
     
@@ -17,7 +17,7 @@ const storage = multer.diskStorage({
     
     cb(null, csvFolder);
   },
-  filename: (req, file, cb) => {
+  filename: (_req: any, file: any, cb: any) => {
     // Keep original filename, sanitize it
     const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
     cb(null, sanitized);
@@ -29,7 +29,7 @@ const upload = multer({
   limits: {
     fileSize: 50 * 1024 * 1024 // 50MB limit
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req: any, file: any, cb: any) => {
     // Only accept CSV files
     if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
       cb(null, true);
@@ -229,7 +229,7 @@ export class DatabaseController {
   /**
    * Upload CSV file
    */
-  async uploadCSV(req: Request, res: Response) {
+  async uploadCSV(req: any, res: Response) {
     try {
       if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
