@@ -158,7 +158,7 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, viewMode }) 
           });
           return maxChild;
         };
-        const maxTreeDepth = getMaxDepth(tree);
+        const maxTreeDepth = getMaxDepth(currentTree);
 
         // Clean up existing instance
         if (cyRef.current) {
