@@ -245,4 +245,57 @@ export class TreeService {
     const results = await executeQuery(query, [rootId, level, limit, offset]);
     return results as Member[];
   }
+
+  /**
+   * Get tree structure based on direct sponsor relationships (sponsor_id)
+   * instead of the 3x3 matrix placements
+   */
+  async getDirectSponsorTree(memberId: number): Promise<TreeStructure | null> {
+    console.log(`Getting direct sponsor tree for member ${memberId}`);
+    
+    // Get the root member
+    const member = await this.getMemberById(memberId);
+    if (!member) {
+      console.log(`Member ${memberId} not found`);
+      return null;
+    }
+
+    // Get all direct sponsors (members where sponsor_id = memberId)
+    const directSponsorsQuery = `
+      SELECT 
+        id,
+        wallet_address,
+        sponsor_id,
+        activation_sequence,
+        total_nft_claimed
+      FROM members
+      WHERE sponsor_id = ?
+      ORDER BY activation_sequence ASC
+    `;
+    
+    const directSponsors = await executeQuery(directSponsorsQuery, [memberId]) as any[];
+    
+    console.log(`Found ${directSponsors.length} direct sponsors for member ${memberId}`);
+
+    // Build tree structure with root and all direct sponsors as children
+    const rootNode: TreeStructure = {
+      id: member.id,
+      wallet_address: member.wallet_address,
+      children: directSponsors.map(sponsor => ({
+        id: sponsor.id,
+        wallet_address: sponsor.wallet_address,
+        children: [], // Direct sponsor view only shows one level
+        depth: 1,
+        sponsor_id: sponsor.sponsor_id,
+        activation_sequence: sponsor.activation_sequence,
+        total_nft_claimed: sponsor.total_nft_claimed
+      })),
+      depth: 0,
+      sponsor_id: member.sponsor_id || undefined,
+      activation_sequence: member.activation_sequence || undefined,
+      total_nft_claimed: member.total_nft_claimed || undefined
+    };
+
+    return rootNode;
+  }
 }

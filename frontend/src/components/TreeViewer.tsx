@@ -1,17 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TreeStructure } from '../types/api';
+import { apiService } from '../services/apiClient';
+
+type ViewMode = '3x3' | 'direct';
 
 interface TreeViewerProps {
   tree: TreeStructure | null;
   onNodeClick?: (nodeId: number) => void;
   maxDepth?: number;
+  viewMode: ViewMode;
 }
 
-const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick }) => {
+const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick, viewMode }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<any>(null);
   const [debugInfo, setDebugInfo] = useState<string>('');
   const [selectedNode, setSelectedNode] = useState<number | null>(null);
+  const [directSponsorTree, setDirectSponsorTree] = useState<TreeStructure | null>(null);
+  const [isLoadingDirectTree, setIsLoadingDirectTree] = useState(false);
   const [tooltip, setTooltip] = useState<{ visible: boolean; x: number; y: number; content: string }>({
     visible: false,
     x: 0,
@@ -19,10 +25,31 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick }) => {
     content: ''
   });
 
+  // Fetch direct sponsor tree when viewMode is 'direct' and we have a root tree
   useEffect(() => {
-    setDebugInfo(`Tree received: ${tree ? 'Yes' : 'No'}`);
+    if (viewMode === 'direct' && tree) {
+      setIsLoadingDirectTree(true);
+      apiService.getDirectSponsorTree(tree.id)
+        .then(directTree => {
+          setDirectSponsorTree(directTree);
+          setIsLoadingDirectTree(false);
+        })
+        .catch(error => {
+          console.error('Error fetching direct sponsor tree:', error);
+          setDebugInfo(prev => prev + `\n✗ Error loading direct sponsor tree: ${error}`);
+          setIsLoadingDirectTree(false);
+        });
+    } else if (viewMode === '3x3') {
+      // Clear direct sponsor tree when switching back to 3x3
+      setDirectSponsorTree(null);
+    }
+  }, [viewMode, tree]);
+
+  useEffect(() => {
+    const currentTree = viewMode === 'direct' ? directSponsorTree : tree;
+    setDebugInfo(`Tree received: ${currentTree ? 'Yes' : 'No'}`);
     
-    if (tree) {
+    if (currentTree) {
       const countNodes = (node: TreeStructure): number => {
         let count = 1; // Count this node
         if (node.children) {
@@ -33,23 +60,33 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick }) => {
         return count;
       };
       
-      const totalNodes = countNodes(tree);
-      setDebugInfo(prev => prev + `\nRoot ID: ${tree.id}`);
-      setDebugInfo(prev => prev + `\nChildren count: ${tree.children?.length || 0}`);
+      const totalNodes = countNodes(currentTree);
+      setDebugInfo(prev => prev + `\nRoot ID: ${currentTree.id}`);
+      setDebugInfo(prev => prev + `\nChildren count: ${currentTree.children?.length || 0}`);
       setDebugInfo(prev => prev + `\nTotal nodes in tree: ${totalNodes}`);
-      setDebugInfo(prev => prev + `\nWallet: ${tree.wallet_address}`);
+      setDebugInfo(prev => prev + `\nWallet: ${currentTree.wallet_address}`);
+      setDebugInfo(prev => prev + `\nView Mode: ${viewMode}`);
     }
-  }, [tree]);
+  }, [tree, directSponsorTree, viewMode]);
 
-  const convertTreeToCytoscape = (tree: TreeStructure): any[] => {
+  const convertTreeToCytoscape = (tree: TreeStructure, mode: ViewMode): any[] => {
     const elements: any[] = [];
     const visited = new Set<number>();
 
-    const addNode = (node: TreeStructure, parentId?: number) => {
+    const addNode = (node: TreeStructure, parentId?: number, currentDepth: number = 0) => {
       if (visited.has(node.id)) return;
+      
+      // In "direct" mode, only show root (depth 0) and direct children (depth 1)
+      // Note: The direct sponsor tree from API already only has one level, but we keep this check for safety
+      if (mode === 'direct' && currentDepth > 1) {
+        return;
+      }
+      
       visited.add(node.id);
 
-      const label = node.wallet_address;
+      // Show only last 4 characters of wallet address
+      const walletAddress = node.wallet_address || '';
+      const label = walletAddress.length > 4 ? walletAddress.slice(-4) : walletAddress;
       
       elements.push({
         data: {
@@ -57,7 +94,7 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick }) => {
           label: label,
           wallet: node.wallet_address,
           position: node.position,
-          depth: node.depth,
+          depth: node.depth ?? currentDepth,
           parentId: parentId ?? null,
           activation_sequence: node.activation_sequence,
           total_nft_claimed: node.total_nft_claimed
@@ -67,14 +104,26 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick }) => {
       // Add children
       if (node.children) {
         node.children.forEach(child => {
-          addNode(child, node.id);
-          elements.push({
-            data: {
-              id: `edge-${node.id}-${child.id}`,
-              source: `node-${node.id}`,
-              target: `node-${child.id}`
-            }
-          });
+          // In "direct" mode, only process children if we're at depth 0 (root)
+          // The direct sponsor tree from API already only has one level, so this is mainly for 3x3 mode
+          if (mode === 'direct' && currentDepth >= 1) {
+            return;
+          }
+          
+          // Recursively add child (will be filtered if depth > 1 in direct mode)
+          addNode(child, node.id, currentDepth + 1);
+          
+          // Add edge from parent to child
+          // In direct mode, we only add edges from root (depth 0) to direct children (depth 1)
+          if (mode === '3x3' || (mode === 'direct' && currentDepth === 0)) {
+            elements.push({
+              data: {
+                id: `edge-${node.id}-${child.id}`,
+                source: `node-${node.id}`,
+                target: `node-${child.id}`
+              }
+            });
+          }
         });
       }
     };
@@ -84,7 +133,10 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick }) => {
   };
 
   const initializeCytoscape = () => {
-    if (!containerRef.current || !tree) {
+    // Use the appropriate tree based on view mode
+    const currentTree = viewMode === 'direct' ? directSponsorTree : tree;
+    
+    if (!containerRef.current || !currentTree) {
       return;
     }
 
@@ -92,7 +144,8 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick }) => {
       // Check if Cytoscape is available
       if (typeof window !== 'undefined' && (window as any).cytoscape) {
         const cytoscape = (window as any).cytoscape;
-        const elements = convertTreeToCytoscape(tree);
+        // For direct sponsor mode, always show full tree (it's already filtered to one level)
+        const elements = convertTreeToCytoscape(currentTree, viewMode === 'direct' ? 'direct' : '3x3');
 
         // Determine maximum depth of the current tree
         const getMaxDepth = (node: TreeStructure): number => {
@@ -175,7 +228,7 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick }) => {
           layout: {
             name: 'breadthfirst',
             directed: true,
-            roots: `#node-${tree.id}`,
+            roots: `#node-${currentTree.id}`,
             spacingFactor: 1.5,
             avoidOverlap: true,
             nodeDimensionsIncludeLabels: true,
@@ -277,7 +330,9 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick }) => {
   };
 
   useEffect(() => {
-    if (tree) {
+    const currentTree = viewMode === 'direct' ? directSponsorTree : tree;
+    
+    if (currentTree && !isLoadingDirectTree) {
       // Check if Cytoscape is already loaded
       if (typeof window !== 'undefined' && (window as any).cytoscape) {
         initializeCytoscape();
@@ -302,9 +357,21 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick }) => {
         cyRef.current = null;
       }
     };
-  }, [tree]);
+  }, [tree, directSponsorTree, viewMode, isLoadingDirectTree]);
 
-  if (!tree) {
+  const currentTree = viewMode === 'direct' ? directSponsorTree : tree;
+
+  if (!currentTree) {
+    if (viewMode === 'direct' && isLoadingDirectTree) {
+      return (
+        <div className="tree-container">
+          <div className="loading">Loading direct sponsor tree...</div>
+          <pre style={{ fontSize: '12px', background: '#f5f5f5', padding: '10px' }}>
+            {debugInfo}
+          </pre>
+        </div>
+      );
+    }
     return (
       <div className="tree-container">
         <div className="loading">No tree data available</div>
@@ -372,7 +439,8 @@ const TreeViewer: React.FC<TreeViewerProps> = ({ tree, onNodeClick }) => {
         left: 10, 
         zIndex: 1000,
         display: 'flex',
-        gap: '5px'
+        gap: '5px',
+        flexWrap: 'wrap'
       }}>
         <button
           onClick={() => {

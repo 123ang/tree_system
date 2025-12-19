@@ -95,6 +95,51 @@ export class TreeController {
     }
   }
 
+  async getDirectSponsorTree(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const memberId = parseInt(id);
+      
+      if (isNaN(memberId)) {
+        return res.status(400).json({ error: 'Invalid member ID' });
+      }
+
+      const tree = await this.treeService.getDirectSponsorTree(memberId);
+      
+      if (!tree) {
+        return res.status(404).json({ error: 'Member not found' });
+      }
+
+      res.json(tree);
+    } catch (error) {
+      console.error('Error getting direct sponsor tree:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  async getDirectSponsorTreeByWallet(req: Request, res: Response) {
+    try {
+      const { wallet } = req.params;
+      
+      const member = await this.treeService.getMemberByWallet(wallet);
+      
+      if (!member) {
+        return res.status(404).json({ error: 'Member not found' });
+      }
+
+      const tree = await this.treeService.getDirectSponsorTree(member.id);
+      
+      if (!tree) {
+        return res.status(404).json({ error: 'Tree not found' });
+      }
+
+      res.json(tree);
+    } catch (error) {
+      console.error('Error getting direct sponsor tree by wallet:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
   async searchMembers(req: Request, res: Response) {
     try {
       const { term } = req.query;

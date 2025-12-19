@@ -33,6 +33,7 @@ function AppContent() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [viewMode, setViewMode] = useState<'3x3' | 'direct'>('3x3');
   
   // Cache for tree data
   const [treeCache, setTreeCache] = useState<Map<string, { tree: TreeStructure; stats: SubtreeStats; timestamp: number }>>(new Map());
@@ -500,6 +501,44 @@ function AppContent() {
             />
             
             <div style={{ marginTop: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>View Mode:</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '15px' }}>
+                <button
+                  onClick={() => setViewMode('3x3')}
+                  style={{
+                    padding: '8px 12px',
+                    background: viewMode === '3x3' ? '#007bff' : '#6c757d',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: viewMode === '3x3' ? 'bold' : 'normal',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  3x3 Matrix
+                </button>
+                <button
+                  onClick={() => setViewMode('direct')}
+                  style={{
+                    padding: '8px 12px',
+                    background: viewMode === 'direct' ? '#007bff' : '#6c757d',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: viewMode === 'direct' ? 'bold' : 'normal',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Direct Sponsor
+                </button>
+              </div>
+            </div>
+            
+            <div style={{ marginTop: '20px' }}>
               <label style={{ display: 'block', marginBottom: '5px' }}>Tree Depth:</label>
               <select 
                 value={maxDepth === 999 ? 'all' : maxDepth} 
@@ -743,6 +782,7 @@ function AppContent() {
                 <TreeViewer 
                   tree={tree}
                   onNodeClick={handleNodeClick}
+                  viewMode={viewMode}
                 />
               </div>
             </>

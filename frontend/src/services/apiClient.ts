@@ -86,6 +86,16 @@ export class ApiService {
     return response.data;
   }
 
+  async getDirectSponsorTree(id: number): Promise<TreeStructure> {
+    const response = await apiClient.get(`/tree/direct/${id}`);
+    return response.data;
+  }
+
+  async getDirectSponsorTreeByWallet(wallet: string): Promise<TreeStructure> {
+    const response = await apiClient.get(`/tree/direct/wallet/${wallet}`);
+    return response.data;
+  }
+
   async searchMembers(term: string): Promise<Member[]> {
     const response = await apiClient.get(`/search?term=${encodeURIComponent(term)}`);
     return response.data;

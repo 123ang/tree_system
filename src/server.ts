@@ -87,6 +87,8 @@ const beeHiveController = new BeeHiveController();
 // Tree routes
 app.get('/api/tree/:id', (req, res) => treeController.getTree(req, res));
 app.get('/api/tree/wallet/:wallet', (req, res) => treeController.getTreeByWallet(req, res));
+app.get('/api/tree/direct/:id', (req, res) => treeController.getDirectSponsorTree(req, res));
+app.get('/api/tree/direct/wallet/:wallet', (req, res) => treeController.getDirectSponsorTreeByWallet(req, res));
 app.get('/api/search', (req, res) => treeController.searchMembers(req, res));
 app.get('/api/stats/:id', (req, res) => treeController.getSubtreeStats(req, res));
 app.get('/api/level/:id/:level', (req, res) => treeController.getMembersByLevel(req, res));
@@ -141,8 +143,10 @@ findAvailablePort(startPort)
       console.log(`Health check: http://localhost:${port}/api/health`);
       console.log(`API documentation:`);
       console.log(`Tree Routes:`);
-      console.log(`  GET /api/tree/:id?maxDepth=3 - Get tree structure by member ID`);
-      console.log(`  GET /api/tree/wallet/:wallet?maxDepth=3 - Get tree structure by wallet address`);
+      console.log(`  GET /api/tree/:id?maxDepth=3 - Get tree structure by member ID (3x3 matrix)`);
+      console.log(`  GET /api/tree/wallet/:wallet?maxDepth=3 - Get tree structure by wallet address (3x3 matrix)`);
+      console.log(`  GET /api/tree/direct/:id - Get direct sponsor tree by member ID`);
+      console.log(`  GET /api/tree/direct/wallet/:wallet - Get direct sponsor tree by wallet address`);
       console.log(`  GET /api/search?term=searchTerm - Search members`);
       console.log(`  GET /api/stats/:id - Get subtree statistics`);
       console.log(`  GET /api/level/:id/:level?limit=100&offset=0 - Get members by level`);
