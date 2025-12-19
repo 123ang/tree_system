@@ -231,6 +231,23 @@ export class TreeService {
     };
   }
 
+  async getDirectSponsorStats(memberId: number): Promise<{
+    directSponsors: number;
+  }> {
+    // Get direct sponsor count (members where sponsor_id = memberId)
+    const directSponsorQuery = `
+      SELECT COUNT(*) as count
+      FROM members
+      WHERE sponsor_id = ?
+    `;
+    const results = await executeQuery(directSponsorQuery, [memberId]);
+    const directSponsors = (results as any)[0].count;
+
+    return {
+      directSponsors
+    };
+  }
+
   async getMembersByLevel(rootId: number, level: number, limit: number = 100, offset: number = 0): Promise<Member[]> {
     const query = `
       SELECT m.*, p.position

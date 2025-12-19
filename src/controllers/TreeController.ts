@@ -173,6 +173,23 @@ export class TreeController {
     }
   }
 
+  async getDirectSponsorStats(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const memberId = parseInt(id);
+      
+      if (isNaN(memberId)) {
+        return res.status(400).json({ error: 'Invalid member ID' });
+      }
+
+      const stats = await this.treeService.getDirectSponsorStats(memberId);
+      res.json(stats);
+    } catch (error) {
+      console.error('Error getting direct sponsor stats:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
   async getMembersByLevel(req: Request, res: Response) {
     try {
       const { id, level } = req.params;

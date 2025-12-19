@@ -106,6 +106,11 @@ export class ApiService {
     return response.data;
   }
 
+  async getDirectSponsorStats(id: number): Promise<{ directSponsors: number }> {
+    const response = await apiClient.get(`/stats/direct/${id}`);
+    return response.data;
+  }
+
   async getMembersByLevel(id: number, level: number, limit: number = 100, offset: number = 0): Promise<Member[]> {
     const response = await apiClient.get(`/level/${id}/${level}?limit=${limit}&offset=${offset}`);
     return response.data;

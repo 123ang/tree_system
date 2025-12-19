@@ -4,10 +4,12 @@ import { Member, SubtreeStats } from '../types/api';
 interface MemberDetailsProps {
   member: Member | null;
   stats: SubtreeStats | null;
+  directSponsorStats: { directSponsors: number } | null;
+  viewMode: '3x3' | 'direct';
   isLoading: boolean;
 }
 
-const MemberDetails: React.FC<MemberDetailsProps> = ({ member, stats, isLoading }) => {
+const MemberDetails: React.FC<MemberDetailsProps> = ({ member, stats, directSponsorStats, viewMode, isLoading }) => {
   if (isLoading) {
     return (
       <div className="member-card">
@@ -59,8 +61,14 @@ const MemberDetails: React.FC<MemberDetailsProps> = ({ member, stats, isLoading 
               <div className="label">Total Members</div>
             </div>
             <div className="stat-card">
-              <div className="number">{stats.directChildren}</div>
-              <div className="label">Direct Children</div>
+              <div className="number">
+                {viewMode === 'direct' 
+                  ? (directSponsorStats?.directSponsors ?? 0)
+                  : stats.directChildren}
+              </div>
+              <div className="label">
+                {viewMode === 'direct' ? 'Direct Sponsors' : 'Direct Children'}
+              </div>
             </div>
             <div className="stat-card">
               <div className="number">{stats.maxDepth}</div>

@@ -24,6 +24,7 @@ function AppContent() {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [tree, setTree] = useState<TreeStructure | null>(null);
   const [stats, setStats] = useState<SubtreeStats | null>(null);
+  const [directSponsorStats, setDirectSponsorStats] = useState<{ directSponsors: number } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isTreeLoading, setIsTreeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +161,8 @@ function AppContent() {
         setSelectedMember(member);
         setTree(cached.tree);
         setStats(cached.stats);
+        // Fetch direct sponsor stats
+        apiService.getDirectSponsorStats(member.id).then(setDirectSponsorStats).catch(() => {});
         setLoadingProgress(100);
         setIsLoading(false);
         setIsTreeLoading(false);
@@ -172,11 +175,13 @@ function AppContent() {
       
       setLoadingProgress(60);
       const statsData = await apiService.getSubtreeStats(member.id);
+      const directStatsData = await apiService.getDirectSponsorStats(member.id);
       
       setLoadingProgress(80);
       setSelectedMember(member);
       setTree(treeData);
       setStats(statsData);
+      setDirectSponsorStats(directStatsData);
       
       // Cache the data
       setCachedData(rootWallet, maxDepth, treeData, statsData);
@@ -200,6 +205,7 @@ function AppContent() {
       }
       setTree(null);
       setStats(null);
+      setDirectSponsorStats(null);
     } finally {
       setIsLoading(false);
       setIsTreeLoading(false);
@@ -232,6 +238,11 @@ function AppContent() {
         } as Member);
         setTree(cached.tree);
         setStats(cached.stats);
+        // Fetch direct sponsor stats
+        const member = await apiService.getMemberByWallet(wallet);
+        if (member) {
+          apiService.getDirectSponsorStats(member.id).then(setDirectSponsorStats).catch(() => {});
+        }
         setLoadingProgress(100);
         setIsLoading(false);
         setIsTreeLoading(false);
@@ -247,11 +258,13 @@ function AppContent() {
       
       setLoadingProgress(75);
       const statsData = await apiService.getSubtreeStats(member.id);
+      const directStatsData = await apiService.getDirectSponsorStats(member.id);
       
       setLoadingProgress(90);
       setSelectedMember(member);
       setTree(treeData);
       setStats(statsData);
+      setDirectSponsorStats(directStatsData);
       
       // Cache the data
       setCachedData(wallet, maxDepth, treeData, statsData);
@@ -271,9 +284,11 @@ function AppContent() {
     try {
       const member = await apiService.getMember(nodeId);
       const statsData = await apiService.getSubtreeStats(nodeId);
+      const directStatsData = await apiService.getDirectSponsorStats(nodeId);
       
       setSelectedMember(member);
       setStats(statsData);
+      setDirectSponsorStats(directStatsData);
       
       // Optionally expand the tree to show more levels for this node
       if (member) {
@@ -302,6 +317,8 @@ function AppContent() {
         setLoadingProgress(50);
         setTree(cached.tree);
         setStats(cached.stats);
+        // Fetch direct sponsor stats
+        apiService.getDirectSponsorStats(selectedMember.id).then(setDirectSponsorStats).catch(() => {});
         setMaxDepth(newDepth);
         setLoadingProgress(100);
         setIsLoading(false);
@@ -315,10 +332,12 @@ function AppContent() {
       
       setLoadingProgress(60);
       const statsData = await apiService.getSubtreeStats(selectedMember.id);
+      const directStatsData = await apiService.getDirectSponsorStats(selectedMember.id);
       
       setLoadingProgress(80);
       setTree(treeData);
       setStats(statsData);
+      setDirectSponsorStats(directStatsData);
       setMaxDepth(newDepth);
       
       // Cache the data
@@ -424,6 +443,8 @@ function AppContent() {
         setLoadingProgress(50);
         setTree(cached.tree);
         setStats(cached.stats);
+        // Fetch direct sponsor stats
+        apiService.getDirectSponsorStats(selectedMember.id).then(setDirectSponsorStats).catch(() => {});
         setMaxDepth(999);
         setLoadingProgress(100);
         setIsLoading(false);
@@ -438,10 +459,12 @@ function AppContent() {
       
       setLoadingProgress(50);
       const statsData = await apiService.getSubtreeStats(selectedMember.id);
+      const directStatsData = await apiService.getDirectSponsorStats(selectedMember.id);
       
       setLoadingProgress(70);
       setTree(treeData);
       setStats(statsData);
+      setDirectSponsorStats(directStatsData);
       setMaxDepth(999);
       
       // Cache the data

@@ -91,6 +91,7 @@ app.get('/api/tree/direct/:id', (req, res) => treeController.getDirectSponsorTre
 app.get('/api/tree/direct/wallet/:wallet', (req, res) => treeController.getDirectSponsorTreeByWallet(req, res));
 app.get('/api/search', (req, res) => treeController.searchMembers(req, res));
 app.get('/api/stats/:id', (req, res) => treeController.getSubtreeStats(req, res));
+app.get('/api/stats/direct/:id', (req, res) => treeController.getDirectSponsorStats(req, res));
 app.get('/api/level/:id/:level', (req, res) => treeController.getMembersByLevel(req, res));
 app.post('/api/cache/clear', (req, res) => treeController.clearCache(req, res));
 
