@@ -2,6 +2,7 @@ import fs from 'fs';
 import csv from 'csv-parser';
 import path from 'path';
 import { executeQuery, executeTransaction } from '../database/connection';
+import pool from '../database/connection';
 
 interface MemberData {
   wallet_address: string;
@@ -21,8 +22,29 @@ interface PlacementCandidate {
 
 export class TreeImporter {
   private members: MemberData[] = [];
-  private memberIdMap: Map<string, number> = new Map(); // wallet -> id
-  private sponsorIdMap: Map<string, number> = new Map(); // wallet -> id
+  private memberIdMap: Map<string, number> = new Map(); // wallet -> id (preserves original case)
+  private sponsorIdMap: Map<string, number> = new Map(); // wallet -> id (preserves original case)
+  
+  /**
+   * Case-insensitive lookup in a map
+   * Returns the value and the original key (to preserve case)
+   */
+  private getCaseInsensitive(map: Map<string, number>, key: string): { value: number; originalKey: string } | null {
+    // First try exact match (fast path)
+    if (map.has(key)) {
+      return { value: map.get(key)!, originalKey: key };
+    }
+    
+    // Case-insensitive search
+    const keyLower = key.toLowerCase();
+    for (const [mapKey, value] of map.entries()) {
+      if (mapKey.toLowerCase() === keyLower) {
+        return { value, originalKey: mapKey };
+      }
+    }
+    
+    return null;
+  }
 
   async importCSV(filePath: string) {
     console.log('Starting CSV import (full setup mode)...');
@@ -246,7 +268,10 @@ export class TreeImporter {
       console.log(`Inserted new member ${member.wallet_address} (ID: ${memberId})`);
       
       // Set root_id and sponsor_id for root member (activation_sequence = 0 or self-referring)
-      if (member.activation_sequence === 0 || member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
+      // Use case-insensitive comparison for self-referring check
+      const isSelfReferring = member.referrer_wallet && 
+        member.wallet_address.toLowerCase() === member.referrer_wallet.toLowerCase();
+      if (member.activation_sequence === 0 || isSelfReferring || !member.referrer_wallet) {
         await executeQuery(
           'UPDATE members SET root_id = ? WHERE id = ?',
           [memberId, memberId]
@@ -269,36 +294,78 @@ export class TreeImporter {
     
     for (const member of this.members) {
       // Skip root member (activation_sequence = 0 or self-referring)
-      if (member.activation_sequence === 0 || member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
+      // Use case-insensitive comparison for self-referring check
+      const isSelfReferring = member.referrer_wallet && 
+        member.wallet_address.toLowerCase() === member.referrer_wallet.toLowerCase();
+      if (member.activation_sequence === 0 || isSelfReferring || !member.referrer_wallet) {
         continue;
       }
       
       // Find sponsor ID from maps (full setup mode - sponsor should be in CSV already)
-      let sponsorId = this.sponsorIdMap.get(member.referrer_wallet);
-      if (!sponsorId) {
-        // Try memberIdMap if not in sponsorIdMap yet
-        const sponsorIdFromMap = this.memberIdMap.get(member.referrer_wallet);
-        if (sponsorIdFromMap) {
-          this.sponsorIdMap.set(member.referrer_wallet, sponsorIdFromMap);
-          sponsorId = sponsorIdFromMap;
+      // Use case-insensitive matching to handle case variations
+      let sponsorId: number | undefined;
+      let sponsorKey: string | undefined;
+      
+      // Try sponsorIdMap first with case-insensitive lookup
+      const sponsorFromSponsorMap = this.getCaseInsensitive(this.sponsorIdMap, member.referrer_wallet);
+      if (sponsorFromSponsorMap) {
+        sponsorId = sponsorFromSponsorMap.value;
+        sponsorKey = sponsorFromSponsorMap.originalKey;
+      } else {
+        // Try memberIdMap with case-insensitive lookup
+        const sponsorFromMemberMap = this.getCaseInsensitive(this.memberIdMap, member.referrer_wallet);
+        if (sponsorFromMemberMap) {
+          sponsorId = sponsorFromMemberMap.value;
+          sponsorKey = sponsorFromMemberMap.originalKey;
+          // Add to sponsorIdMap using the original key (preserves case)
+          this.sponsorIdMap.set(sponsorKey, sponsorId);
         } else {
           console.error(`Sponsor not found for member ${member.wallet_address}, referrer: ${member.referrer_wallet}`);
           continue;
         }
       }
       
-      const memberId = this.memberIdMap.get(member.wallet_address);
-      if (!memberId) {
+      // Use case-insensitive lookup for member ID
+      const memberLookup = this.getCaseInsensitive(this.memberIdMap, member.wallet_address);
+      if (!memberLookup) {
         console.error(`Member ID not found for ${member.wallet_address}`);
         continue;
       }
+      const memberId = memberLookup.value;
       
       // Apply placement algorithm
       const placement = await this.findPlacement(sponsorId, member.activation_sequence);
       
       if (placement) {
-        await this.placeMember(memberId, placement.parent_id, placement.position, sponsorId);
-        this.sponsorIdMap.set(member.wallet_address, memberId);
+        try {
+          await this.placeMember(memberId, placement.parent_id, placement.position, sponsorId);
+          this.sponsorIdMap.set(member.wallet_address, memberId);
+        } catch (error: any) {
+          // If placement failed because parent is full or all positions taken, try to find a different parent
+          if (error.message && (error.message.includes('is full') || error.message.includes('no available positions') || error.message.includes('all positions taken'))) {
+            console.warn(`Parent ${placement.parent_id} is full for member ${memberId}, finding alternative parent...`);
+            // Re-query for available slots, excluding the failed parent
+            const alternativeSlots = await this.getAvailableSlots(sponsorId, placement.parent_id);
+            if (alternativeSlots.length > 0) {
+              // Try the first available slot (already filtered to exclude failed parent)
+              const alternativePlacement = alternativeSlots[0];
+              
+              try {
+                await this.placeMember(memberId, alternativePlacement.parent_id, alternativePlacement.position, sponsorId);
+                this.sponsorIdMap.set(member.wallet_address, memberId);
+                console.log(`Successfully placed member ${memberId} under alternative parent ${alternativePlacement.parent_id} at position ${alternativePlacement.position}`);
+              } catch (retryError: any) {
+                console.error(`Failed to place member ${memberId} even with alternative parent: ${retryError.message}`);
+                throw retryError;
+              }
+            } else {
+              console.error(`No available slots found for member ${memberId} (activation sequence ${member.activation_sequence}) after excluding parent ${placement.parent_id}`);
+              throw new Error(`No available slots in sponsor ${sponsorId}'s subtree for member ${memberId} (excluded full parent ${placement.parent_id})`);
+            }
+          } else {
+            throw error;
+          }
+        }
       }
     }
     
@@ -339,7 +406,7 @@ export class TreeImporter {
     return candidates[0];
   }
 
-  private async getAvailableSlots(sponsorId: number): Promise<PlacementCandidate[]> {
+  private async getAvailableSlots(sponsorId: number, excludeParentId?: number): Promise<PlacementCandidate[]> {
     // First, ensure sponsor has self-reference in closure table
     await executeQuery(
       'INSERT IGNORE INTO member_closure (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
@@ -384,6 +451,23 @@ export class TreeImporter {
       const depth = row.depth;
       const parentJoinedAt = row.joined_at;
       
+      // Exclude the specified parent if provided
+      if (excludeParentId && parentId === excludeParentId) {
+        continue;
+      }
+      
+      // Double-check parent capacity (in case query result is stale)
+      const currentChildCount = await executeQuery(
+        'SELECT COUNT(*) as count FROM placements WHERE parent_id = ?',
+        [parentId]
+      );
+      const actualChildCount = (currentChildCount as any[])[0].count;
+      
+      if (actualChildCount >= 3) {
+        // Parent is full, skip it
+        continue;
+      }
+      
       // Get existing positions for this parent to avoid duplicates
       const existingPositions = await executeQuery(
         'SELECT position FROM placements WHERE parent_id = ?',
@@ -408,83 +492,105 @@ export class TreeImporter {
   }
 
   private async placeMember(memberId: number, parentId: number, position: number, sponsorId: number): Promise<void> {
-    // Check if position is already taken and find next available
-    const existingPlacement = await executeQuery(
-      'SELECT child_id FROM placements WHERE parent_id = ? AND position = ?',
-      [parentId, position]
-    );
+    // ATOMIC OPERATION: Check and insert in a single transaction with row locking
+    // This prevents race conditions by ensuring no other operation can modify the parent
+    // between the check and insert
     
-    if ((existingPlacement as any[]).length > 0) {
-      // Find next available position
-      for (let pos = 1; pos <= 3; pos++) {
-        const checkPos = await executeQuery(
-          'SELECT child_id FROM placements WHERE parent_id = ? AND position = ?',
-          [parentId, pos]
-        );
-        if ((checkPos as any[]).length === 0) {
-          position = pos;
-          break;
-        }
-      }
-    }
-
-    const queries = [
-      // Insert placement
-      {
-        query: 'INSERT INTO placements (parent_id, child_id, position) VALUES (?, ?, ?)',
-        params: [parentId, memberId, position]
-      },
-      // Add self-link to closure table
-      {
-        query: 'INSERT INTO member_closure (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
-        params: [memberId, memberId, 0]
-      },
-      // Add ancestors to closure table
-      {
-        query: `
-          INSERT INTO member_closure (ancestor_id, descendant_id, depth)
-          SELECT ancestor_id, ?, depth + 1
-          FROM member_closure
-          WHERE descendant_id = ?
-        `,
-        params: [memberId, parentId]
-      },
-      // Update member's root_id and sponsor_id
-      // Use JOIN to avoid MySQL error: can't update table while selecting from it
-      {
-        query: `
-          UPDATE members m
-          JOIN (SELECT root_id FROM members WHERE id = ?) AS p
-          SET m.root_id = p.root_id,
-              m.sponsor_id = ?
-          WHERE m.id = ?
-        `,
-        params: [parentId, sponsorId, memberId]
-      }
-    ];
-    
+    // Use a transaction to ensure atomicity
+    const connection = await pool.getConnection();
     try {
-      await executeTransaction(queries);
-      console.log(`Successfully placed member ${memberId} under parent ${parentId} at position ${position}`);
-    } catch (error: any) {
-      if (error.code === 'ER_DUP_ENTRY') {
-        console.warn(`Duplicate entry detected for member ${memberId}, retrying with different position...`);
-        // Try with position 1, 2, or 3 in order
+      await connection.beginTransaction();
+      
+      // Step 1: Lock the parent row and check capacity (atomic check)
+      // FOR UPDATE locks the rows, preventing other transactions from modifying them
+      const lockAndCheckQuery = `
+        SELECT 
+          COUNT(*) as child_count,
+          GROUP_CONCAT(position ORDER BY position) as used_positions
+        FROM placements 
+        WHERE parent_id = ?
+        FOR UPDATE
+      `;
+      
+      const [lockResult] = await connection.execute(lockAndCheckQuery, [parentId]) as any[];
+      const childCount = lockResult[0].child_count;
+      const usedPositionsStr = lockResult[0].used_positions || '';
+      const usedPositions = usedPositionsStr ? usedPositionsStr.split(',').map(Number) : [];
+      
+      // Step 2: Verify parent has space (still within the same transaction context)
+      if (childCount >= 3) {
+        await connection.rollback();
+        throw new Error(`Parent ${parentId} is full (has ${childCount} children). Need to find different parent.`);
+      }
+      
+      // Step 3: Find available position if the requested one is taken
+      if (usedPositions.includes(position)) {
+        // Find next available position (1, 2, or 3)
         for (let pos = 1; pos <= 3; pos++) {
-          try {
-            queries[0].params[2] = pos; // Update position
-            await executeTransaction(queries);
-            console.log(`Successfully placed member ${memberId} at position ${pos}`);
-            return;
-          } catch (retryError: any) {
-            if (retryError.code !== 'ER_DUP_ENTRY') {
-              throw retryError;
-            }
+          if (!usedPositions.includes(pos)) {
+            position = pos;
+            break;
           }
         }
-        throw new Error(`Could not place member ${memberId} - all positions taken`);
+        
+        // Double-check we found a position
+        if (usedPositions.includes(position)) {
+          await connection.rollback();
+          connection.release();
+          throw new Error(`Parent ${parentId} has no available positions. Current children: ${childCount}`);
+        }
+      }
+      
+      // Step 4: Execute all inserts within the same transaction
+      // The parent row is still locked from Step 1, so no other operation can interfere
+      
+      // Insert placement
+      await connection.execute(
+        'INSERT INTO placements (parent_id, child_id, position) VALUES (?, ?, ?)',
+        [parentId, memberId, position]
+      );
+      
+      // Add self-link to closure table
+      await connection.execute(
+        'INSERT IGNORE INTO member_closure (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
+        [memberId, memberId, 0]
+      );
+      
+      // Add ancestors to closure table
+      await connection.execute(
+        `INSERT IGNORE INTO member_closure (ancestor_id, descendant_id, depth)
+         SELECT ancestor_id, ?, depth + 1
+         FROM member_closure
+         WHERE descendant_id = ?`,
+        [memberId, parentId]
+      );
+      
+      // Update member's root_id and sponsor_id
+      await connection.execute(
+        `UPDATE members m
+         JOIN (SELECT root_id FROM members WHERE id = ?) AS p
+         SET m.root_id = p.root_id,
+             m.sponsor_id = ?
+         WHERE m.id = ?`,
+        [parentId, sponsorId, memberId]
+      );
+      
+      // Commit the transaction (releases the lock)
+      await connection.commit();
+      console.log(`Successfully placed member ${memberId} under parent ${parentId} at position ${position}`);
+    } catch (error: any) {
+      // Rollback on any error
+      await connection.rollback();
+      
+      // If we get ER_DUP_ENTRY, it means the position check failed (shouldn't happen with lock)
+      if (error.code === 'ER_DUP_ENTRY') {
+        console.warn(`Duplicate entry detected for member ${memberId}, parent may have been filled.`);
+        throw new Error(`Parent ${parentId} is full or position ${position} is taken. Need to find different parent.`);
       }
       throw error;
+    } finally {
+      // Always release the connection
+      connection.release();
     }
   }
 }

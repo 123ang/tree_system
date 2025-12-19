@@ -21,8 +21,29 @@ interface PlacementCandidate {
 
 export class TreeImporterOnly {
   private members: MemberData[] = [];
-  private memberIdMap: Map<string, number> = new Map(); // wallet -> id
-  private sponsorIdMap: Map<string, number> = new Map(); // wallet -> id
+  private memberIdMap: Map<string, number> = new Map(); // wallet -> id (preserves original case)
+  private sponsorIdMap: Map<string, number> = new Map(); // wallet -> id (preserves original case)
+  
+  /**
+   * Case-insensitive lookup in a map
+   * Returns the value and the original key (to preserve case)
+   */
+  private getCaseInsensitive(map: Map<string, number>, key: string): { value: number; originalKey: string } | null {
+    // First try exact match (fast path)
+    if (map.has(key)) {
+      return { value: map.get(key)!, originalKey: key };
+    }
+    
+    // Case-insensitive search
+    const keyLower = key.toLowerCase();
+    for (const [mapKey, value] of map.entries()) {
+      if (mapKey.toLowerCase() === keyLower) {
+        return { value, originalKey: mapKey };
+      }
+    }
+    
+    return null;
+  }
 
   async importCSV(filePath: string) {
     console.log('Starting CSV import (import-only mode)...');
@@ -227,8 +248,9 @@ export class TreeImporterOnly {
         joinedAt = new Date();
       }
       
-      // Check if member already exists
-      let memberId = this.memberIdMap.get(member.wallet_address);
+      // Check if member already exists (case-insensitive check to avoid duplicates)
+      const existingMember = this.getCaseInsensitive(this.memberIdMap, member.wallet_address);
+      let memberId = existingMember?.value;
       
       if (memberId) {
         // Member already exists, update if needed
@@ -273,7 +295,10 @@ export class TreeImporterOnly {
       // Set root_id and sponsor_id for root member
       // In import-only mode, only treat as root if self-referring or no referrer
       // activation_sequence = 0 just means first in this CSV, not necessarily root
-      if (member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
+      // Use case-insensitive comparison for self-referring check
+      const isSelfReferring = member.referrer_wallet && 
+        member.wallet_address.toLowerCase() === member.referrer_wallet.toLowerCase();
+      if (isSelfReferring || !member.referrer_wallet) {
         await executeQuery(
           'UPDATE members SET root_id = ? WHERE id = ?',
           [memberId, memberId]
@@ -292,31 +317,38 @@ export class TreeImporterOnly {
 
   /**
    * Find sponsor ID for a member, checking maps and database
+   * Uses case-insensitive matching to handle case variations
    * Returns the sponsor ID or null if not found
    */
   private async findSponsorId(referrerWallet: string): Promise<number | null> {
-    const sponsorIdFromMap = this.sponsorIdMap.get(referrerWallet);
-    if (sponsorIdFromMap !== undefined) {
-      return sponsorIdFromMap;
+    // Try case-insensitive lookup in sponsorIdMap
+    const sponsorFromSponsorMap = this.getCaseInsensitive(this.sponsorIdMap, referrerWallet);
+    if (sponsorFromSponsorMap) {
+      return sponsorFromSponsorMap.value;
     }
     
-    const memberIdFromMap = this.memberIdMap.get(referrerWallet);
-    if (memberIdFromMap !== undefined) {
-      this.sponsorIdMap.set(referrerWallet, memberIdFromMap);
-      return memberIdFromMap;
+    // Try case-insensitive lookup in memberIdMap
+    const sponsorFromMemberMap = this.getCaseInsensitive(this.memberIdMap, referrerWallet);
+    if (sponsorFromMemberMap) {
+      // Add to sponsorIdMap using the original key (preserves case)
+      this.sponsorIdMap.set(sponsorFromMemberMap.originalKey, sponsorFromMemberMap.value);
+      return sponsorFromMemberMap.value;
     }
     
     // Check database (for import-only mode where referrer exists from previous import)
+    // Use case-insensitive comparison in SQL
     try {
-      const sponsorQuery = 'SELECT id, sponsor_id FROM members WHERE wallet_address = ?';
+      const sponsorQuery = 'SELECT id, sponsor_id, wallet_address FROM members WHERE LOWER(wallet_address) = LOWER(?)';
       const sponsorResults = await executeQuery(sponsorQuery, [referrerWallet]);
       
       if ((sponsorResults as any[]).length > 0) {
         const sponsorRow = (sponsorResults as any[])[0];
         const sponsorId: number = sponsorRow.id;
+        const originalWalletAddress: string = sponsorRow.wallet_address; // Get original case from DB
         
-        this.memberIdMap.set(referrerWallet, sponsorId);
-        this.sponsorIdMap.set(referrerWallet, sponsorId);
+        // Store with original case from database
+        this.memberIdMap.set(originalWalletAddress, sponsorId);
+        this.sponsorIdMap.set(originalWalletAddress, sponsorId);
         
         console.log(`Found referrer ${referrerWallet} (ID: ${sponsorId}) in database`);
         return sponsorId;
@@ -334,7 +366,10 @@ export class TreeImporterOnly {
     for (const member of this.members) {
       // In import-only mode, only skip if self-referring or no referrer
       // activation_sequence = 0 just means first in this CSV, not necessarily root
-      if (member.wallet_address === member.referrer_wallet || !member.referrer_wallet) {
+      // Use case-insensitive comparison for self-referring check
+      const isSelfReferring = member.referrer_wallet && 
+        member.wallet_address.toLowerCase() === member.referrer_wallet.toLowerCase();
+      if (isSelfReferring || !member.referrer_wallet) {
         console.log(`Skipping root member: ${member.wallet_address}`);
         continue;
       }
@@ -346,11 +381,13 @@ export class TreeImporterOnly {
         continue;
       }
       
-      const memberId = this.memberIdMap.get(member.wallet_address);
-      if (!memberId) {
+      // Use case-insensitive lookup for member ID
+      const memberLookup = this.getCaseInsensitive(this.memberIdMap, member.wallet_address);
+      if (!memberLookup) {
         console.error(`Member ID not found for ${member.wallet_address}`);
         continue;
       }
+      const memberId = memberLookup.value;
       
       const placement = await this.findPlacement(sponsorId, member.activation_sequence);
       
