@@ -8,7 +8,7 @@
     "dev:backend": "nodemon src/server.ts",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "npm run build:backend && npm run build:frontend",
-    "build:backend": "tsc",
+    "build:backend": "npx tsc",
     "build:frontend": "cd frontend && npm run build",
     "start": "node dist/server.js",
     "import-csv": "ts-node src/scripts/importCSV.ts",
