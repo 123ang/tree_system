@@ -391,15 +391,39 @@ export class TreeImporterOnly {
   }
 
   private async getAvailableSlots(sponsorId: number): Promise<PlacementCandidate[]> {
+    // First, ensure sponsor has self-reference in closure table
+    await executeQuery(
+      'INSERT IGNORE INTO member_closure (ancestor_id, descendant_id, depth) VALUES (?, ?, ?)',
+      [sponsorId, sponsorId, 0]
+    );
+    
+    // Get all nodes in sponsor's subtree that have < 3 children
+    // Use recursive CTE to find all descendants via placements table as fallback
+    // This ensures we find all nodes even if closure table is incomplete
     const query = `
-      SELECT DISTINCT m.id, m.joined_at, 
-             (SELECT COUNT(*) FROM placements p WHERE p.parent_id = m.id) as child_count,
-             mc.depth
-      FROM members m
-      JOIN member_closure mc ON m.id = mc.descendant_id
-      WHERE mc.ancestor_id = ? 
-        AND (SELECT COUNT(*) FROM placements p WHERE p.parent_id = m.id) < 3
-      ORDER BY mc.depth ASC, child_count ASC, m.joined_at ASC, m.id ASC
+      WITH RECURSIVE sponsor_subtree AS (
+        -- Start with sponsor itself
+        SELECT id, joined_at, 0 as depth
+        FROM members
+        WHERE id = ?
+        
+        UNION ALL
+        
+        -- Recursively find all children via placements
+        SELECT m.id, m.joined_at, st.depth + 1
+        FROM members m
+        JOIN placements p ON m.id = p.child_id
+        JOIN sponsor_subtree st ON p.parent_id = st.id
+      )
+      SELECT DISTINCT 
+        st.id as id,
+        st.joined_at as joined_at,
+        st.depth as depth,
+        (SELECT COUNT(*) FROM placements p WHERE p.parent_id = st.id) as child_count
+      FROM sponsor_subtree st
+      WHERE (SELECT COUNT(*) FROM placements p WHERE p.parent_id = st.id) < 3
+      -- Prioritize shallower nodes first to fully distribute among A1/A2/A3 before deeper levels
+      ORDER BY st.depth ASC, child_count ASC, st.joined_at ASC, st.id ASC
     `;
     
     const results = await executeQuery(query, [sponsorId]);
