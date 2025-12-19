@@ -664,6 +664,8 @@ function AppContent() {
           <MemberDetails 
             member={selectedMember}
             stats={stats}
+            directSponsorStats={directSponsorStats}
+            viewMode={viewMode}
             isLoading={isLoading}
           />
         )}
