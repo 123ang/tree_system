@@ -39,6 +39,24 @@ function AppContent() {
   // Cache for tree data
   const [treeCache, setTreeCache] = useState<Map<string, { tree: TreeStructure; stats: SubtreeStats; timestamp: number }>>(new Map());
 
+  // Fetch direct sponsor stats when viewMode changes or when member is selected
+  useEffect(() => {
+    if (selectedMember && selectedMember.id) {
+      console.log('Fetching direct sponsor stats for member:', selectedMember.id, 'viewMode:', viewMode);
+      apiService.getDirectSponsorStats(selectedMember.id)
+        .then((data) => {
+          console.log('Direct sponsor stats received:', data);
+          setDirectSponsorStats(data);
+        })
+        .catch((error) => {
+          console.error('Error fetching direct sponsor stats:', error);
+          setDirectSponsorStats(null);
+        });
+    } else {
+      setDirectSponsorStats(null);
+    }
+  }, [viewMode, selectedMember]);
+
   // Cache utility functions
   const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
   

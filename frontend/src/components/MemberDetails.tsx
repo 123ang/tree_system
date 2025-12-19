@@ -52,42 +52,56 @@ const MemberDetails: React.FC<MemberDetailsProps> = ({ member, stats, directSpon
         )}
       </div>
 
-      {stats && (
-        <div className="member-card">
-          <h3>Subtree Statistics</h3>
-          <div className="stats-grid">
-            <div className="stat-card">
-              <div className="number">{stats.totalMembers}</div>
-              <div className="label">Total Members</div>
-            </div>
-            <div className="stat-card">
-              <div className="number">
-                {viewMode === 'direct' 
-                  ? (directSponsorStats?.directSponsors ?? 0)
-                  : stats.directChildren}
+      {viewMode === 'direct' ? (
+        // Direct Sponsor Mode - Show only direct sponsor count
+        directSponsorStats && (
+          <div className="member-card">
+            <h3>Direct Sponsor Statistics</h3>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <div className="number">{directSponsorStats.directSponsors}</div>
+                <div className="label">Direct Sponsors</div>
               </div>
-              <div className="label">
-                {viewMode === 'direct' ? 'Direct Sponsors' : 'Direct Children'}
-              </div>
-            </div>
-            <div className="stat-card">
-              <div className="number">{stats.maxDepth}</div>
-              <div className="label">Max Depth</div>
-            </div>
-            <div className="stat-card">
-              <div className="number">{Object.keys(stats.levels).length}</div>
-              <div className="label">Levels</div>
             </div>
           </div>
-          
-          <h4>Members by Level</h4>
-          {Object.entries(stats.levels).map(([depth, count]) => (
-            <div key={depth} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-              <span>Level {depth}:</span>
-              <span><strong>{count}</strong></span>
+        )
+      ) : (
+        // 3x3 Matrix Mode - Show full subtree statistics
+        stats && (
+          <div className="member-card">
+            <h3>Subtree Statistics</h3>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <div className="number">{stats.totalMembers}</div>
+                <div className="label">Total Members</div>
+              </div>
+              <div className="stat-card">
+                <div className="number">{stats.directChildren}</div>
+                <div className="label">Direct Children</div>
+              </div>
+              <div className="stat-card">
+                <div className="number">{stats.maxDepth}</div>
+                <div className="label">Max Depth</div>
+              </div>
+              <div className="stat-card">
+                <div className="number">{Object.keys(stats.levels).length}</div>
+                <div className="label">Levels</div>
+              </div>
             </div>
-          ))}
-        </div>
+            
+            {stats.levels && Object.keys(stats.levels).length > 0 && (
+              <>
+                <h4>Members by Level</h4>
+                {Object.entries(stats.levels).map(([depth, count]) => (
+                  <div key={depth} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <span>Level {depth}:</span>
+                    <span><strong>{count}</strong></span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )
       )}
     </div>
   );
